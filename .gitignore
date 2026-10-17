@@ -7,3 +7,5 @@ build/
 dist/
 settings.local.json
 logs/
+.pio-venv/
+.pio/
