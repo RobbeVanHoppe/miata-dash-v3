@@ -150,6 +150,11 @@ def create_app(
             abort(404)
         return send_from_directory(logs, name, as_attachment=True)
 
+    # -- system ---------------------------------------------------------------
+    @app.get("/system")
+    def system_page():
+        return render_template("system.html")
+
     # -- settings -----------------------------------------------------------
     @app.get("/settings")
     def settings_page():

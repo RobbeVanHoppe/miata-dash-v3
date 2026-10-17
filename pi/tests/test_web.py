@@ -138,3 +138,9 @@ def test_settings_saves_new_fields(full):
     s = store.settings
     assert (s.layout, s.shift_rpm, s.imu_forward_axis, s.imu_up_axis, s.gps_rate_hz) == (
         "motorsport", 6800, "-y", "+x", 2.0)
+
+
+def test_system_page(full):
+    client, _ = full
+    html = client.get("/system").get_data(as_text=True)
+    assert "net.Main_LightsOffLatched" in html and "Faults" in html

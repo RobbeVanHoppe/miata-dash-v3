@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 
-PAGES = ("/", "/radio", "/logs", "/settings")
+PAGES = ("/", "/radio", "/logs", "/system", "/settings")
 
 
 class UiState:

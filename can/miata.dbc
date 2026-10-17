@@ -67,7 +67,7 @@ CM_ BO_ 1040 "Main node -> all, 10 Hz while awake.";
 CM_ SG_ 1040 Main_HeadSwitch "Headlight stalk in HEAD, sensed upstream of the lights-off interrupt.";
 CM_ SG_ 1040 Main_LightsOffLatched "Latching relay RLY1 is holding the HEAD line open (auto lights-off active).";
 CM_ SG_ 1040 Main_PiTimeout "1 = no PI_MAIN_CMD within the heartbeat timeout; Pi-commanded relays released.";
-CM_ SG_ 1040 Main_Faults "Bit flags, defined in esp32/main-node.";
+CM_ SG_ 1040 Main_Faults "Bit flags, sticky until the next IG1-on: 0 SET failed after retries, 1 RLY1 dropped out while latched, 2 RLY1 found SET with IG1 on, 3 VBAT < 11.0 V for 30 s, 4 VBAT > 16.0 V, 5 CAN bus-off occurred, 6 unexpected reset, 7 auto lights-off setting never received from the Pi.";
 CM_ BO_ 1056 "Pi -> knob: haptic profile. Sent on change and at 2 Hz.";
 CM_ SG_ 1056 Prof_Strength "Detent torque as % of the configured maximum.";
 CM_ BO_ 1057 "Pi -> knob: jump to a position (e.g. after a page change) without a haptic event.";

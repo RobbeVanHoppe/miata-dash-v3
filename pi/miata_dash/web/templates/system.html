@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}System{% endblock %}
+{% block content %}
+<div class="system">
+  <section class="node" id="node-main">
+    <h2>Main node <span class="health" data-signal="net.Main_Counter"></span></h2>
+    <dl>
+      <dt>Ignition (IG1)</dt><dd data-bool="net.Main_IG1"></dd>
+      <dt>Headlight stalk in HEAD</dt><dd data-bool="net.Main_HeadSwitch"></dd>
+      <dt>Reverse</dt><dd data-bool="net.Main_Reverse"></dd>
+      <dt>Lights-off latched (RLY1)</dt><dd data-bool="net.Main_LightsOffLatched"></dd>
+      <dt>Relays O02 / O03 / O04</dt><dd id="relays"></dd>
+      <dt>Pi heartbeat seen by node</dt><dd data-bool="net.Main_PiTimeout" data-invert="1"></dd>
+      <dt>Battery (node)</dt><dd data-num="net.Main_VBat" data-unit="V" data-dec="2"></dd>
+    </dl>
+    <h3>Faults</h3>
+    <ul class="faults" id="faults"></ul>
+  </section>
+
+  <section class="node" id="node-knob">
+    <h2>Knob <span class="health" data-signal="net.Knob_Counter"></span></h2>
+    <dl>
+      <dt>Position</dt><dd data-num="net.Knob_Position" data-dec="0"></dd>
+      <dt>Angle</dt><dd data-num="net.Knob_Angle" data-unit="°" data-dec="1"></dd>
+      <dt>Pressed</dt><dd data-bool="net.Knob_Pressed"></dd>
+      <dt>Motor supply</dt><dd data-bool="net.Knob_MotorOff" data-invert="1"></dd>
+    </dl>
+  </section>
+
+  <section class="node" id="node-pi">
+    <h2>Pi &amp; sensors</h2>
+    <dl>
+      <dt>ECU (ME221)</dt><dd><span class="health" data-signal="ecu.RPM"></span></dd>
+      <dt>GPS fix</dt><dd data-bool="gps.fix"></dd>
+      <dt>Satellites</dt><dd data-num="gps.satellites" data-dec="0"></dd>
+      <dt>Speed source</dt><dd data-text="ins.mode"></dd>
+      <dt>Speed uncertainty</dt><dd data-num="ins.sigma_kph" data-unit="km/h" data-dec="1"></dd>
+      <dt>IMU</dt><dd><span class="health" data-signal="imu.a_fwd"></span></dd>
+    </dl>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Main_Faults bits, as documented in can/miata.dbc.
+  const FAULTS = [
+    "Lights-off SET failed after 3 attempts",
+    "Relay dropped out while latched",
+    "Relay found SET with ignition on",
+    "Battery below 11.0 V for 30 s",
+    "Battery above 16.0 V",
+    "CAN bus-off occurred",
+    "Unexpected reset",
+    "Auto lights-off setting never received from the Pi",
+  ];
+  const STALE = 2.0;
+
+  function fresh(r) { return r && r.age <= STALE; }
+
+  function render(state) {
+    document.querySelectorAll(".health").forEach((el) => {
+      const r = state[el.dataset.signal];
+      el.textContent = fresh(r) ? "online" : "not seen";
+      el.className = "health " + (fresh(r) ? "ok" : "bad");
+    });
+    document.querySelectorAll("[data-bool]").forEach((el) => {
+      const r = state[el.dataset.bool];
+      if (!fresh(r)) { el.textContent = "–"; el.className = "muted"; return; }
+      const on = Boolean(r.value) !== Boolean(el.dataset.invert);
+      el.textContent = on ? "yes" : "no";
+      el.className = on ? "on" : "";
+    });
+    document.querySelectorAll("[data-num]").forEach((el) => {
+      const r = state[el.dataset.num];
+      el.textContent = fresh(r) && typeof r.value === "number"
+        ? r.value.toFixed(Number(el.dataset.dec)) + " " + (el.dataset.unit || "") : "–";
+    });
+    document.querySelectorAll("[data-text]").forEach((el) => {
+      const r = state[el.dataset.text];
+      el.textContent = fresh(r) ? { gps: "GPS", dr: "dead reckoning (IMU)", lost: "none" }[r.value] || r.value : "–";
+    });
+    const relays = ["O02", "O03", "O04"].map((n) => {
+      const r = state["net.Main_Relay_" + n];
+      return fresh(r) ? (r.value ? n + " ON" : n + " off") : n + " –";
+    });
+    document.getElementById("relays").textContent = relays.join(" · ");
+    const f = state["net.Main_Faults"];
+    const list = document.getElementById("faults");
+    const bits = fresh(f) ? FAULTS.filter((_, i) => f.value & (1 << i)) : [];
+    list.replaceChildren(...(bits.length ? bits : [fresh(f) ? "None" : "–"]).map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      if (bits.length) li.className = "fault";
+      return li;
+    }));
+  }
+
+  async function poll() {
+    try {
+      const resp = await fetch("/api/state", { cache: "no-store" });
+      if (resp.ok) render(await resp.json());
+    } catch (e) { render({}); }
+    setTimeout(poll, 250);
+  }
+  poll();
+</script>
+{% endblock %}

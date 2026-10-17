@@ -12,6 +12,7 @@
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if here == 'dashboard' }}">Dash</a>
     <a href="{{ url_for('radio_page') }}" class="{{ 'active' if here == 'radio_page' }}">Radio</a>
     <a href="{{ url_for('logs_page') }}" class="{{ 'active' if here == 'logs_page' }}">Logs</a>
+    <a href="{{ url_for('system_page') }}" class="{{ 'active' if here == 'system_page' }}">System</a>
     <a href="{{ url_for('settings_page') }}" class="{{ 'active' if here == 'settings_page' }}">Settings</a>
     {% block nav_extra %}{% endblock %}
   </nav>

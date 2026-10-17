@@ -265,3 +265,18 @@ main { height: calc(100% - var(--nav-h)); padding: 8px; overflow: auto; }
 .relay-row { display: flex; gap: 8px; }
 .relay-btn { flex: 1; padding: 12px; border: 0; border-radius: 8px; background: var(--panel); font-size: 18px; }
 .relay-btn.on { background: var(--yellow); color: #000; }
+
+/* ---- system ----------------------------------------------------------------- */
+.system { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.node { padding: 10px 14px; border-radius: 10px; background: var(--panel); }
+.node h2 { font-size: 20px; margin: 2px 0 10px; display: flex; justify-content: space-between; }
+.node h3 { font-size: 15px; color: var(--muted); margin: 12px 0 4px; }
+.node dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; margin: 0; font-size: 16px; }
+.node dt { color: var(--muted); }
+.node dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.node dd.on { color: var(--yellow); }
+.health { font-size: 13px; padding: 2px 8px; border-radius: 10px; }
+.health.ok { background: #13361f; color: var(--green); }
+.health.bad { background: #3a1616; color: var(--red); }
+.faults { margin: 0; padding-left: 18px; font-size: 15px; }
+.faults li.fault { color: var(--red); }
