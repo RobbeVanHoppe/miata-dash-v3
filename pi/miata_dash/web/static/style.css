@@ -1,0 +1,86 @@
+/* Laid out for the 1024x600 touchscreen; dark to avoid glare at night. */
+:root {
+  --bg: #0b0d10;
+  --panel: #161a20;
+  --text: #e8ecf1;
+  --muted: #6b7380;
+  --accent: #3fb6ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  user-select: none;
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  height: 48px;
+}
+
+nav a {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 18px;
+}
+
+main { height: calc(100% - 48px); padding: 8px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 8px;
+  height: 100%;
+}
+
+.gauge {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.label { font-size: 18px; color: var(--muted); }
+.value { font-size: 48px; font-variant-numeric: tabular-nums; }
+.unit { font-size: 20px; color: var(--muted); }
+.bar { height: 8px; border-radius: 4px; background: #000; overflow: hidden; }
+.fill { height: 100%; width: 0; background: var(--accent); }
+.gauge.stale .value { color: var(--muted); }
+
+.settings { display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
+.settings h1 { font-size: 24px; margin: 0 0 6px; }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 20px;
+}
+
+.toggle input { width: 28px; height: 28px; }
+
+.settings button {
+  padding: 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #000;
+  font-size: 20px;
+}

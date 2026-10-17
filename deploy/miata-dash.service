@@ -1,0 +1,12 @@
+# systemd user unit: ~/.config/systemd/user/miata-dash.service
+[Unit]
+Description=Miata dashboard
+After=network.target
+
+[Service]
+ExecStart=%h/miata-dash-v3/.venv/bin/miata-dash
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

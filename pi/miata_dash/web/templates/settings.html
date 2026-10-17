@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<form method="post" class="settings">
+  <h1>Gauges</h1>
+  {% for g in gauges %}
+  <label class="toggle">
+    <input type="checkbox" name="shown" value="{{ g.id }}" {% if settings.gauge_visible(g.id) %}checked{% endif %}>
+    <span>{{ g.label }}</span>
+  </label>
+  {% endfor %}
+  <button type="submit">Save</button>
+</form>
+{% endblock %}
