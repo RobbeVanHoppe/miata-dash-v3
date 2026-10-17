@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import functools
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .fusion import SpeedEstimator
 from .logger import DriveLogger
 from .settings import SettingsStore
-from .simulator import FakeEcu, FakeSerialGps
+from .simulator import FakeEcu, FakeI2cBus, FakeSerialGps
 from .sources import CanSource, DataSource, EcuSpeedSender, GpsSource
+from .sources.imu import ImuSource, Mounting
 from .state import VehicleState
 from .web import create_app
 
@@ -19,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DBC = REPO_ROOT / "can" / "ME1_4.dbc"
 SIM_CHANNEL = "miata-sim"
 GPS_LOG_FIELDS = ("utc", "fix", "satellites", "latitude", "longitude", "altitude", "speed_kph", "course")
+EXTRA_LOG_FIELDS = ("ins.speed_kph", "ins.mode", "ins.sigma_kph", "imu.a_fwd", "imu.a_left", "imu.yaw_rate")
 
 
 @dataclass
@@ -34,6 +39,7 @@ class AppConfig:
     can_channel: str = "can0"
     gps_port: str | None = "/dev/serial0"  # None disables the GPS
     gps_baudrate: int = 9600
+    imu: bool = True  # MPU6050 on I²C bus 1
     simulate: bool = False
 
 
@@ -48,16 +54,34 @@ class Application:
 
     def _build_sources(self) -> list[DataSource]:
         cfg = self.config
+        settings = self.store.settings
+        mounting = Mounting(settings.imu_forward_axis, settings.imu_up_axis)
+        self.estimator = SpeedEstimator(self.state, mounting)
         if cfg.simulate:
+            sim_start = time.monotonic()
             self.fake_ecu = FakeEcu(cfg.dbc_path, SIM_CHANNEL)
             can_source = CanSource(self.state, cfg.dbc_path, interface="virtual", channel=SIM_CHANNEL)
-            gps: GpsSource | None = GpsSource(self.state, serial_factory=FakeSerialGps)
+            gps: GpsSource | None = GpsSource(
+                self.state,
+                serial_factory=functools.partial(FakeSerialGps, start=sim_start),
+                rate_hz=settings.gps_rate_hz,
+            )
+            imu: ImuSource | None = ImuSource(
+                self.state, mounting, lambda: FakeI2cBus(sim_start), self.estimator.on_imu
+            )
         else:
             can_source = CanSource(self.state, cfg.dbc_path, cfg.can_interface, cfg.can_channel)
-            gps = GpsSource(self.state, cfg.gps_port, cfg.gps_baudrate) if cfg.gps_port else None
+            gps = (
+                GpsSource(self.state, cfg.gps_port, cfg.gps_baudrate, rate_hz=settings.gps_rate_hz)
+                if cfg.gps_port
+                else None
+            )
+            imu = ImuSource(self.state, mounting, on_sample=self.estimator.on_imu) if cfg.imu else None
         sources: list[DataSource] = [can_source]
         if gps is not None:
             sources += [gps, EcuSpeedSender(self.state, can_source, self.store)]
+        if imu is not None:
+            sources.append(imu)
         sources.append(DriveLogger(self.state, self.store, cfg.log_dir, self._log_columns(can_source)))
         return sources
 
@@ -69,7 +93,7 @@ class Application:
             if m.name != "ME1_In_1"  # sent to the ECU, not by it
             for s in m.signals
         }
-        return sorted(ecu) + [f"gps.{n}" for n in GPS_LOG_FIELDS]
+        return sorted(ecu) + [f"gps.{n}" for n in GPS_LOG_FIELDS] + list(EXTRA_LOG_FIELDS)
 
     def start(self) -> None:
         for source in self.sources:

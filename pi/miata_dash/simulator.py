@@ -7,6 +7,7 @@ The fake ECU encodes frames with the real DBC and sends them on a python-can
 from __future__ import annotations
 
 import math
+import struct
 import threading
 import time
 from functools import reduce
@@ -77,29 +78,85 @@ def _with_checksum(body: str) -> str:
     return f"${body}*{reduce(lambda a, c: a ^ ord(c), body, 0):02X}\r\n"
 
 
-class FakeSerialGps:
-    """Stands in for ``serial.Serial``: emits RMC + GGA once per second (NEO-6M default)."""
+TUNNEL_EVERY_S = 90.0  # the fake GPS loses its fix for TUNNEL_S out of every 90 s
+TUNNEL_S = 12.0
 
-    def __init__(self, *_args, **_kwargs) -> None:
-        self._start = time.monotonic()
+
+def _speed_kph(t: float) -> float:
+    return _engine(t)["speed_kph"]
+
+
+def _accel_fwd(t: float) -> float:
+    """d(speed)/dt of the drive cycle, in m/s²."""
+    # speed_kph = 120 · (sin(t/4) + 1) / 2  →  dv/dt = 120/3.6 · cos(t/4) / 8
+    return 120 / 3.6 * math.cos(t / 4) / 8
+
+
+def in_tunnel(t: float) -> bool:
+    return t % TUNNEL_EVERY_S >= TUNNEL_EVERY_S - TUNNEL_S
+
+
+class FakeSerialGps:
+    """Stands in for ``serial.Serial``: RMC + GGA at 5 Hz, with a periodic tunnel."""
+
+    period = 0.2
+
+    def __init__(self, *_args, start: float | None = None, **_kwargs) -> None:
+        self._start = time.monotonic() if start is None else start
         self._queue: list[str] = []
         self._next = 0.0
+        self.written = bytearray()
+
+    def write(self, data: bytes) -> int:
+        self.written += data
+        return len(data)
 
     def readline(self) -> bytes:
         if not self._queue:
             now = time.monotonic()
             if now < self._next:
-                time.sleep(min(0.2, self._next - now))
+                time.sleep(min(0.05, self._next - now))
                 return b""
-            self._next = now + 1.0
-            knots = _engine(now - self._start)["speed_kph"] * KPH_TO_KNOTS
+            self._next = now + self.period
+            t = now - self._start
             stamp = time.strftime("%H%M%S.00", time.gmtime())
             date = time.strftime("%d%m%y", time.gmtime())
-            self._queue = [
-                _with_checksum(f"GPRMC,{stamp},A,0000.000,N,00000.000,E,{knots:.2f},90.0,{date},,,A"),
-                _with_checksum(f"GPGGA,{stamp},0000.000,N,00000.000,E,1,08,1.0,10.0,M,47.0,M,,"),
-            ]
+            if in_tunnel(t):
+                self._queue = [
+                    _with_checksum(f"GPRMC,{stamp},V,,,,,,,{date},,,N"),
+                    _with_checksum(f"GPGGA,{stamp},,,,,0,00,99.9,,M,,M,,"),
+                ]
+            else:
+                knots = _speed_kph(t) * KPH_TO_KNOTS
+                self._queue = [
+                    _with_checksum(f"GPRMC,{stamp},A,0000.000,N,00000.000,E,{knots:.2f},90.0,{date},,,A"),
+                    _with_checksum(f"GPGGA,{stamp},0000.000,N,00000.000,E,1,08,1.0,10.0,M,47.0,M,,"),
+                ]
         return self._queue.pop(0).encode("ascii")
+
+    def close(self) -> None:
+        pass
+
+
+class FakeI2cBus:
+    """Stands in for smbus2.SMBus with an MPU6050 mounted +x forward, +z up."""
+
+    def __init__(self, start: float | None = None) -> None:
+        self._start = time.monotonic() if start is None else start
+
+    def write_byte_data(self, addr: int, reg: int, value: int) -> None:
+        pass
+
+    def read_byte_data(self, addr: int, reg: int) -> int:
+        return 0x68 if reg == 0x75 else 0
+
+    def read_i2c_block_data(self, addr: int, reg: int, length: int) -> list[int]:
+        t = time.monotonic() - self._start
+        lsb = 16384 / 9.80665
+        ax = round(_accel_fwd(t) * lsb + 40)  # +40 LSB: a small bias for the filter to learn
+        az = 16384  # +1 g up
+        raw = struct.pack(">7h", ax, 0, az, 0, 0, 0, 0)
+        return list(raw)
 
     def close(self) -> None:
         pass

@@ -12,6 +12,7 @@ dependencies = [
     "python-can>=4.2",
     "cantools>=39.0",
     "pyserial>=3.5",
+    "smbus2>=0.4; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]

@@ -53,6 +53,7 @@ class DataSource(ABC):
             self._thread = None
 
     def _run(self) -> None:
+        last_error = ""
         while not self._stop.is_set():
             try:
                 self.open()
@@ -60,7 +61,10 @@ class DataSource(ABC):
                 while not self._stop.is_set():
                     self.poll()
             except Exception as exc:  # noqa: BLE001 - keep the thread alive on any device error
-                log.warning("%s: %s; retrying in %.0f s", self.name, exc, self.retry_delay)
+                # Warn once per distinct error; a missing device would otherwise log every 2 s.
+                level = logging.DEBUG if str(exc) == last_error else logging.WARNING
+                last_error = str(exc)
+                log.log(level, "%s: %s; retrying in %.0f s", self.name, exc, self.retry_delay)
                 self._stop.wait(self.retry_delay)
             finally:
                 try:

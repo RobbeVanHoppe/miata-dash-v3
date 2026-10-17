@@ -21,6 +21,7 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     p.add_argument("--gps-port", default=d.gps_port)
     p.add_argument("--gps-baud", type=int, default=d.gps_baudrate)
     p.add_argument("--no-gps", action="store_true")
+    p.add_argument("--no-imu", action="store_true", help="no MPU6050 on I2C bus 1")
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args(argv)
 
@@ -38,6 +39,7 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
         can_channel=a.can_channel,
         gps_port=None if a.no_gps else a.gps_port,
         gps_baudrate=a.gps_baud,
+        imu=not a.no_imu,
         simulate=a.simulate,
     )
 
