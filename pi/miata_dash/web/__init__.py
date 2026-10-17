@@ -40,8 +40,14 @@ def create_app(
     def settings_save():
         shown = set(request.form.getlist("shown"))
         hidden = [g.id for g in gauges if g.id not in shown]
-        send_speed = request.form.get("send_gps_speed_to_ecu") == "on"
-        store.save(replace(store.settings, hidden_gauges=hidden, send_gps_speed_to_ecu=send_speed))
+        store.save(
+            replace(
+                store.settings,
+                hidden_gauges=hidden,
+                send_gps_speed_to_ecu=request.form.get("send_gps_speed_to_ecu") == "on",
+                logging_enabled=request.form.get("logging_enabled") == "on",
+            )
+        )
         return redirect(url_for("dashboard"))
 
     return app

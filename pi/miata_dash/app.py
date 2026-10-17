@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from .logger import DriveLogger
 from .settings import SettingsStore
 from .simulator import FakeEcu, FakeSerialGps
 from .sources import CanSource, DataSource, EcuSpeedSender, GpsSource
@@ -17,6 +18,7 @@ log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DBC = REPO_ROOT / "can" / "ME1_4.dbc"
 SIM_CHANNEL = "miata-sim"
+GPS_LOG_FIELDS = ("utc", "fix", "satellites", "latitude", "longitude", "altitude", "speed_kph", "course")
 
 
 @dataclass
@@ -24,6 +26,7 @@ class AppConfig:
     """Hardware and server options (command line), as opposed to user settings."""
 
     settings_path: Path = Path.home() / ".config" / "miata-dash" / "settings.json"
+    log_dir: Path = Path.home() / "miata-logs"
     host: str = "127.0.0.1"
     port: int = 5000
     dbc_path: Path = DEFAULT_DBC
@@ -55,7 +58,18 @@ class Application:
         sources: list[DataSource] = [can_source]
         if gps is not None:
             sources += [gps, EcuSpeedSender(self.state, can_source, self.store)]
+        sources.append(DriveLogger(self.state, self.store, cfg.log_dir, self._log_columns(can_source)))
         return sources
+
+    @staticmethod
+    def _log_columns(can_source: CanSource) -> list[str]:
+        ecu = {
+            can_source.prefix + s.name
+            for m in can_source.db.messages
+            if m.name != "ME1_In_1"  # sent to the ECU, not by it
+            for s in m.signals
+        }
+        return sorted(ecu) + [f"gps.{n}" for n in GPS_LOG_FIELDS]
 
     def start(self) -> None:
         for source in self.sources:

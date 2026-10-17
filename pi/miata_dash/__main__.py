@@ -14,6 +14,7 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     p.add_argument("--host", default=d.host)
     p.add_argument("--port", type=int, default=d.port)
     p.add_argument("--settings", type=Path, default=d.settings_path)
+    p.add_argument("--log-dir", type=Path, default=d.log_dir)
     p.add_argument("--dbc", type=Path, default=d.dbc_path)
     p.add_argument("--can-interface", default=d.can_interface)
     p.add_argument("--can-channel", default=d.can_channel)
@@ -29,6 +30,7 @@ def parse_args(argv: list[str] | None = None) -> AppConfig:
     )
     return AppConfig(
         settings_path=a.settings,
+        log_dir=a.log_dir,
         host=a.host,
         port=a.port,
         dbc_path=a.dbc,

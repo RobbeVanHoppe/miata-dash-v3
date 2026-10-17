@@ -31,6 +31,7 @@ GY-GPS6MV2 ── UART ── Raspberry Pi 3B ─────────┘
 | `gauges` | What the dashboard shows (signal, unit, display range). |
 | `settings.SettingsStore` | User settings as JSON, written atomically (safe on power loss). |
 | `web.create_app` | Flask: `/` dashboard, `/settings`, `/api/state` (JSON, polled at 10 Hz). |
+| `logger.DriveLogger` | One CSV per drive in `~/miata-logs` (10 Hz, all ECU + GPS signals). Starts when RPM > 0, ends 60 s after the engine stops. |
 | `simulator` | Fake ECU (real DBC encoding on a virtual CAN bus) and fake GPS. |
 | `app.Application` | Wires it all together. |
 
@@ -90,7 +91,9 @@ ECU settings that are not decided yet; do not guess them.
 
 ## Not done yet
 
-- Safe shutdown after ignition off (needs the power board).
+- Safe shutdown after ignition off (needs the power board). Logs need a
+  writable partition even if the root filesystem is made read-only.
+- Haptic knob next to the display (hardware not designed yet).
 - ESP32 ↔ Pi CAN messages (`can/miata.dbc`) and ESP32 firmware.
-- Logging, NEO-6M 5 Hz configuration, IMU dead reckoning, extra I²C sensors.
+- Uploading logs to a database, NEO-6M 5 Hz configuration, IMU dead reckoning, extra I²C sensors.
 - Warning thresholds per gauge.
