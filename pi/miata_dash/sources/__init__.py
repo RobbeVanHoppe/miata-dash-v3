@@ -2,6 +2,7 @@
 
 from .base import DataSource
 from .can_source import CanSource
+from .ecu_speed import EcuSpeedSender
 from .gps_source import GpsSource
 
-__all__ = ["DataSource", "CanSource", "GpsSource"]
+__all__ = ["DataSource", "CanSource", "EcuSpeedSender", "GpsSource"]

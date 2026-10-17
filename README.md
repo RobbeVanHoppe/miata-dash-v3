@@ -73,7 +73,7 @@ ECU settings that are not decided yet; do not guess them.
    [Match]
    Name=can0
    [CAN]
-   BitRate=<ME221 CAN bit rate from MEITE, TBD>
+   BitRate=500000
    ```
    and `sudo systemctl enable --now systemd-networkd`.
 3. **WiFi.** The Pi 3B only has 2.4 GHz WiFi: set the phone hotspot to

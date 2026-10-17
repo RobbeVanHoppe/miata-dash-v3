@@ -49,6 +49,18 @@ class CanSource(DataSource):
             self._bus.shutdown()
             self._bus = None
 
+    def send(self, msg: can.Message) -> bool:
+        """Send a frame if the bus is open. Returns False instead of raising."""
+        bus = self._bus
+        if bus is None:
+            return False
+        try:
+            bus.send(msg, timeout=0.05)
+        except can.CanError as exc:
+            log.debug("can: send 0x%X failed: %s", msg.arbitration_id, exc)
+            return False
+        return True
+
     def handle(self, msg: can.Message) -> None:
         if msg.is_error_frame or msg.is_remote_frame:
             return

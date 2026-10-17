@@ -39,6 +39,14 @@ def test_settings_toggle_afr_persists(client, store):
     assert SettingsStore(store.path).settings.gauge_visible("afr")
 
 
+def test_settings_toggle_ecu_speed(client, store):
+    assert store.settings.send_gps_speed_to_ecu is False
+    client.post("/settings", data={"shown": ["rpm"], "send_gps_speed_to_ecu": "on"})
+    assert store.settings.send_gps_speed_to_ecu is True
+    client.post("/settings", data={"shown": ["rpm"]})
+    assert store.settings.send_gps_speed_to_ecu is False
+
+
 def test_api_state(client):
     data = client.get("/api/state").get_json()
     assert data["ecu.RPM"]["value"] == 900

@@ -9,6 +9,11 @@
     <span>{{ g.label }}</span>
   </label>
   {% endfor %}
+  <h1>ECU</h1>
+  <label class="toggle">
+    <input type="checkbox" name="send_gps_speed_to_ecu" {% if settings.send_gps_speed_to_ecu %}checked{% endif %}>
+    <span>Send GPS speed to ECU (nothing is sent without a GPS fix)</span>
+  </label>
   <button type="submit">Save</button>
 </form>
 {% endblock %}

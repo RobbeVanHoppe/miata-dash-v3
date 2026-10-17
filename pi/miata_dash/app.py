@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .settings import SettingsStore
 from .simulator import FakeEcu, FakeSerialGps
-from .sources import CanSource, DataSource, GpsSource
+from .sources import CanSource, DataSource, EcuSpeedSender, GpsSource
 from .state import VehicleState
 from .web import create_app
 
@@ -38,7 +38,7 @@ class Application:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.state = VehicleState()
-        self.store = SettingsStore(config.settings_path)
+        self.store = SettingsStore(config.settings_path)  # before sources: EcuSpeedSender reads it
         self.fake_ecu: FakeEcu | None = None
         self.sources: list[DataSource] = self._build_sources()
         self.web = create_app(self.state, self.store)
@@ -47,15 +47,14 @@ class Application:
         cfg = self.config
         if cfg.simulate:
             self.fake_ecu = FakeEcu(cfg.dbc_path, SIM_CHANNEL)
-            return [
-                CanSource(self.state, cfg.dbc_path, interface="virtual", channel=SIM_CHANNEL),
-                GpsSource(self.state, serial_factory=FakeSerialGps),
-            ]
-        sources: list[DataSource] = [
-            CanSource(self.state, cfg.dbc_path, cfg.can_interface, cfg.can_channel),
-        ]
-        if cfg.gps_port:
-            sources.append(GpsSource(self.state, cfg.gps_port, cfg.gps_baudrate))
+            can_source = CanSource(self.state, cfg.dbc_path, interface="virtual", channel=SIM_CHANNEL)
+            gps: GpsSource | None = GpsSource(self.state, serial_factory=FakeSerialGps)
+        else:
+            can_source = CanSource(self.state, cfg.dbc_path, cfg.can_interface, cfg.can_channel)
+            gps = GpsSource(self.state, cfg.gps_port, cfg.gps_baudrate) if cfg.gps_port else None
+        sources: list[DataSource] = [can_source]
+        if gps is not None:
+            sources += [gps, EcuSpeedSender(self.state, can_source, self.store)]
         return sources
 
     def start(self) -> None:

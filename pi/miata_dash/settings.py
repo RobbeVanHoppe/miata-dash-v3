@@ -21,6 +21,7 @@ def _default_hidden() -> list[str]:
 class Settings:
     hidden_gauges: list[str] = field(default_factory=_default_hidden)
     stale_after_s: float = 2.0  # gauges grey out when their data is older than this
+    send_gps_speed_to_ecu: bool = False  # off until ME221 behaviour on GPS dropout is known
 
     def gauge_visible(self, gauge_id: str) -> bool:
         return gauge_id not in self.hidden_gauges
