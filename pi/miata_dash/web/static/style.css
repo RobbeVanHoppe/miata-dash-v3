@@ -2,9 +2,15 @@
 :root {
   --bg: #0b0d10;
   --panel: #161a20;
+  --panel-2: #1f252d;
   --text: #e8ecf1;
   --muted: #6b7380;
   --accent: #3fb6ff;
+  --needle: #ff5a1f; /* NA cluster orange-red */
+  --green: #2ecc71;
+  --yellow: #f5c518;
+  --red: #ff3b30;
+  --nav-h: 48px;
 }
 
 * { box-sizing: border-box; }
@@ -16,18 +22,24 @@ html, body {
   color: var(--text);
   font-family: system-ui, sans-serif;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
+button { font: inherit; color: inherit; cursor: pointer; }
+[hidden] { display: none !important; }
+
+/* ---- navigation ---------------------------------------------------------- */
 nav {
   display: flex;
   gap: 8px;
   padding: 6px 8px;
-  height: 48px;
+  height: var(--nav-h);
 }
 
-nav a {
+nav a, .nav-btn {
   flex: 0 0 auto;
-  padding: 8px 18px;
+  padding: 7px 18px;
+  border: 0;
   border-radius: 6px;
   background: var(--panel);
   color: var(--text);
@@ -35,8 +47,15 @@ nav a {
   font-size: 18px;
 }
 
-main { height: calc(100% - 48px); padding: 8px; }
+nav a.active { background: var(--accent); color: #000; }
+.nav-btn { margin-left: auto; color: var(--muted); }
 
+main { height: calc(100% - var(--nav-h)); padding: 8px; overflow: auto; }
+
+.muted { color: var(--muted); }
+.badge { color: var(--yellow); font-weight: 700; font-size: 0.8em; }
+
+/* ---- digital layout --------------------------------------------------------- */
 .grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -61,22 +80,180 @@ main { height: calc(100% - 48px); padding: 8px; }
 .fill { height: 100%; width: 0; background: var(--accent); }
 .gauge.stale .value { color: var(--muted); }
 
-.settings { display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
-.settings h1 { font-size: 24px; margin: 0 0 6px; }
+/* ---- retro layout (round dials) ------------------------------------------- */
+[data-layout="retro"] { --bg: #050505; }
 
-.toggle {
+.retro { display: flex; gap: 12px; height: 100%; align-items: center; }
+.retro-big { display: flex; gap: 12px; flex: 0 0 auto; }
+.retro-small {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  flex: 1 1 auto;
+  align-content: center;
+}
+
+.dial.big { width: 330px; height: 330px; }
+.dial.small { width: 100%; max-width: 160px; aspect-ratio: 1; justify-self: center; }
+.dial-svg { width: 100%; height: 100%; display: block; }
+.dial-face { fill: #000; stroke: #2a2a2a; stroke-width: 3; }
+.tick { stroke: #bbb; stroke-width: 1.2; }
+.tick.major { stroke: #fff; stroke-width: 3; }
+.dial-red { fill: none; stroke: var(--red); stroke-width: 7; }
+.dial-num {
+  fill: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.dial-label { fill: #9a9a9a; font-size: 10px; text-anchor: middle; letter-spacing: 0.06em; }
+.dial-readout { fill: #fff; font-size: 16px; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.needle-line { stroke: var(--needle); stroke-width: 4; stroke-linecap: round; }
+.needle {
+  transform-box: view-box;
+  transform-origin: 100px 100px; /* dial centre in the 200x200 viewBox */
+  transition: transform 0.1s linear;
+}
+.needle-cap { fill: #222; stroke: #444; stroke-width: 2; }
+.dial.stale .needle-line { stroke: #553322; }
+.dial.stale .dial-readout { fill: var(--muted); }
+
+/* ---- motorsport layout ---------------------------------------------------- */
+.moto { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+
+.shiftbar { display: flex; gap: 6px; height: 46px; }
+.seg { flex: 1; border-radius: 4px; background: #15181c; }
+.seg.green.on { background: var(--green); }
+.seg.yellow.on { background: var(--yellow); }
+.seg.red.on { background: var(--red); }
+.shiftbar.shift .seg { background: #3fa0ff; animation: blink 0.12s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.15; } }
+
+.moto-main { display: flex; gap: 10px; flex: 1 1 auto; }
+.moto-big {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border-radius: 10px;
+  background: var(--panel);
+}
+#g-rpm.moto-big { flex: 1.6; }
+.moto-big .num { font-size: 150px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.moto-big .label { font-size: 22px; }
+.moto-row { display: flex; gap: 8px; height: 90px; }
+.moto-small {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+.moto-small .num { font-size: 34px; font-variant-numeric: tabular-nums; }
+.moto-small .label { font-size: 14px; }
+.moto-big.stale .num, .moto-small.stale .num { color: var(--muted); }
+
+/* ---- radio ------------------------------------------------------------------ */
+.radio { display: flex; gap: 12px; height: 100%; }
+.radio-main {
+  flex: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  justify-content: center;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.freq-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.freq { text-align: center; }
+.freq-num { font-size: 96px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.freq-unit { font-size: 20px; color: var(--muted); }
+.radio-controls { display: flex; gap: 10px; justify-content: center; }
+.big-btn {
+  min-width: 88px;
+  padding: 16px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 22px;
+}
+.big-btn.play.on { background: var(--green); color: #000; }
+.squelch-row { display: flex; gap: 12px; align-items: center; justify-content: center; font-size: 18px; }
+.squelch-row input { width: 260px; }
+.radio-status { text-align: center; color: var(--muted); min-height: 1.4em; }
+.radio-side { flex: 1; overflow: auto; }
+.radio-side h2 { font-size: 16px; color: var(--muted); margin: 14px 0 6px; }
+.bands { display: flex; flex-wrap: wrap; gap: 6px; }
+.band-btn { padding: 10px 12px; border: 0; border-radius: 8px; background: var(--panel); font-size: 16px; }
+.band-btn.active { background: var(--accent); color: #000; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 20px;
+  background: var(--panel);
+  font-size: 18px;
+}
+.chip-x { border: 0; background: none; color: var(--muted); font-size: 18px; padding: 0 2px; }
+.legal { font-size: 13px; color: var(--muted); margin-top: 18px; }
+
+/* ---- logs / generic pages ------------------------------------------------- */
+.page h1 { font-size: 24px; margin: 4px 0 12px; }
+.logs { width: 100%; border-collapse: collapse; font-size: 18px; }
+.logs th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px; }
+.logs td { padding: 8px 6px; border-top: 1px solid var(--panel-2); }
+.btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* ---- settings --------------------------------------------------------------- */
+.settings { display: flex; gap: 24px; align-items: flex-start; }
+.settings-col { flex: 1; display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
+.settings h1 { font-size: 22px; margin: 6px 0 2px; }
+
+.toggle, .field {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: 8px;
   background: var(--panel);
-  font-size: 20px;
+  font-size: 18px;
 }
+.toggle input { width: 26px; height: 26px; }
+.field input, .field select {
+  margin-left: auto;
+  padding: 6px 8px;
+  font-size: 18px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 0;
+  border-radius: 6px;
+}
+.field input[type="number"] { width: 110px; }
 
-.toggle input { width: 28px; height: 28px; }
+.segmented { display: flex; gap: 6px; }
+.segmented label { flex: 1; }
+.segmented input { display: none; }
+.segmented span {
+  display: block;
+  padding: 12px;
+  text-align: center;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 18px;
+}
+.segmented input:checked + span { background: var(--accent); color: #000; }
 
-.settings button {
+.settings button[type="submit"] {
   padding: 14px;
   border: 0;
   border-radius: 8px;

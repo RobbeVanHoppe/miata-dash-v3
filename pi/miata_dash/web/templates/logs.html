@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Drive logs{% endblock %}
+{% block content %}
+<div class="page">
+  <h1>Drive logs</h1>
+  {% if files %}
+  <table class="logs">
+    <thead><tr><th>Drive</th><th>Size</th><th></th></tr></thead>
+    <tbody>
+      {% for f in files %}
+      <tr>
+        <td>{{ f.name }}</td>
+        <td>{{ f.kb }} kB</td>
+        <td><a class="btn" href="{{ url_for('log_download', name=f.name) }}">Download</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No drives logged yet. A log starts when the engine runs.</p>
+  {% endif %}
+</div>
+{% endblock %}

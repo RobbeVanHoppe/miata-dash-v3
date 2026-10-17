@@ -1,19 +1,68 @@
 {% extends "base.html" %}
+{% block body_attrs %}data-layout="{{ layout }}"{% endblock %}
+{% block nav_extra %}
+<button class="nav-btn" id="layout-cycle" title="Next layout">Layout: {{ layout }}</button>
+{% endblock %}
 {% block content %}
+{% if layout == "digital" %}
 <div class="grid">
   {% for g in gauges %}
   <section class="gauge stale" id="g-{{ g.id }}">
-    <div class="label">{{ g.label }}</div>
+    <div class="label">{{ g.label }} <span class="badge"></span></div>
     <div class="value"><span class="num">--</span> <span class="unit">{{ g.unit }}</span></div>
     <div class="bar"><div class="fill"></div></div>
   </section>
   {% endfor %}
 </div>
+
+{% elif layout == "retro" %}
+{# Stock NA cluster feel: two big dials, small dials beside them. #}
+{% set big = gauges | selectattr("id", "in", ["rpm", "speed"]) | list %}
+{% set small = gauges | rejectattr("id", "in", ["rpm", "speed"]) | list %}
+<div class="retro">
+  <div class="retro-big">
+    {% for g in big %}
+    <div class="dial big stale" id="g-{{ g.id }}"></div>
+    {% endfor %}
+  </div>
+  <div class="retro-small">
+    {% for g in small %}
+    <div class="dial small stale" id="g-{{ g.id }}"></div>
+    {% endfor %}
+  </div>
+</div>
+
+{% else %}
+{# Motorsport: shift lights, huge RPM, speed, compact secondaries. #}
+<div class="moto">
+  <div class="shiftbar" id="shiftbar"></div>
+  <div class="moto-main">
+    {% for g in gauges if g.id in ["rpm", "speed"] %}
+    <section class="moto-big stale" id="g-{{ g.id }}">
+      <div class="num">--</div>
+      <div class="label">{{ g.unit }} <span class="badge"></span></div>
+    </section>
+    {% endfor %}
+  </div>
+  <div class="moto-row">
+    {% for g in gauges if g.id not in ["rpm", "speed"] %}
+    <section class="moto-small stale" id="g-{{ g.id }}">
+      <div class="label">{{ g.label }}</div>
+      <div class="num">--</div>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>
-  window.GAUGES = {{ gauges | tojson }};
-  window.STALE_AFTER = {{ stale_after | tojson }};
+  window.DASH = {
+    layout: {{ layout | tojson }},
+    gauges: {{ gauges | tojson }},
+    staleAfter: {{ stale_after | tojson }},
+    shiftRpm: {{ shift_rpm | tojson }},
+  };
 </script>
 <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
 {% endblock %}

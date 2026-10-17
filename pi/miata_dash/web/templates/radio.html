@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Radio{% endblock %}
+{% block content %}
+<div class="radio">
+  <div class="radio-main">
+    <div class="freq-row">
+      <button class="big-btn" data-action="step" data-direction="-1">◀</button>
+      <div class="freq">
+        <div class="freq-num" id="freq">---.-</div>
+        <div class="freq-unit">MHz · <span id="band-name">-</span></div>
+      </div>
+      <button class="big-btn" data-action="step" data-direction="1">▶</button>
+    </div>
+    <div class="radio-controls">
+      <button class="big-btn play" id="play">Play</button>
+      <button class="big-btn" data-action="stop">Stop</button>
+      <button class="big-btn" data-action="save_preset">★ Save</button>
+      <button class="big-btn" id="scan">Scan FM</button>
+    </div>
+    <div class="squelch-row" id="squelch-row">
+      <label>Squelch <input type="range" id="squelch" min="0" max="500" step="10"></label>
+      <span id="squelch-val">0</span>
+    </div>
+    <div class="radio-status" id="status"></div>
+  </div>
+  <aside class="radio-side">
+    <div class="bands" id="bands"></div>
+    <h2>Presets</h2>
+    <div class="chips" id="presets"></div>
+    <h2>Found stations</h2>
+    <div class="chips" id="stations"><span class="muted">Press "Scan FM"</span></div>
+    <p class="legal">Broadcast FM is fine everywhere. Rules for listening to other bands
+      differ per country: check before you listen.</p>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='radio.js') }}"></script>
+{% endblock %}

@@ -28,6 +28,10 @@ class Settings:
     gps_rate_hz: float = 5.0  # NEO-6M max 5 Hz
     imu_forward_axis: str = "+x"  # which MPU6050 axis points to the front of the car
     imu_up_axis: str = "+z"
+    radio_presets: list[dict] = field(default_factory=list)  # [{"band": "fm", "freq_mhz": 100.0}]
+    radio_audio_device: str = "default"  # ALSA device; car audio path still TBD
+    radio_gain: str = "auto"
+    radio_ppm: int = 0  # RTL-SDR crystal correction
 
     def gauge_visible(self, gauge_id: str) -> bool:
         return gauge_id not in self.hidden_gauges

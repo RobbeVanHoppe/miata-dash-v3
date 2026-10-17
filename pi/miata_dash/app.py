@@ -10,8 +10,9 @@ from pathlib import Path
 
 from .fusion import SpeedEstimator
 from .logger import DriveLogger
+from .radio import RadioController
 from .settings import SettingsStore
-from .simulator import FakeEcu, FakeI2cBus, FakeSerialGps
+from .simulator import FakeEcu, FakeI2cBus, FakeRadioRunner, FakeSerialGps
 from .sources import CanSource, DataSource, EcuSpeedSender, GpsSource
 from .sources.imu import ImuSource, Mounting
 from .state import VehicleState
@@ -50,7 +51,14 @@ class Application:
         self.store = SettingsStore(config.settings_path)  # before sources: EcuSpeedSender reads it
         self.fake_ecu: FakeEcu | None = None
         self.sources: list[DataSource] = self._build_sources()
-        self.web = create_app(self.state, self.store)
+        self.radio = self._build_radio()
+        self.web = create_app(self.state, self.store, radio=self.radio, log_dir=config.log_dir)
+
+    def _build_radio(self) -> RadioController:
+        s = self.store.settings
+        if self.config.simulate:
+            return RadioController(FakeRadioRunner(), tools_present=True)
+        return RadioController(audio_device=s.radio_audio_device, gain=s.radio_gain, ppm=s.radio_ppm)
 
     def _build_sources(self) -> list[DataSource]:
         cfg = self.config
@@ -102,6 +110,7 @@ class Application:
             self.fake_ecu.start()
 
     def stop(self) -> None:
+        self.radio.stop()
         if self.fake_ecu is not None:
             self.fake_ecu.stop()
         for source in self.sources:

@@ -2,23 +2,60 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <form method="post" class="settings">
-  <h1>Gauges</h1>
-  {% for g in gauges %}
-  <label class="toggle">
-    <input type="checkbox" name="shown" value="{{ g.id }}" {% if settings.gauge_visible(g.id) %}checked{% endif %}>
-    <span>{{ g.label }}</span>
-  </label>
-  {% endfor %}
-  <h1>ECU</h1>
-  <label class="toggle">
-    <input type="checkbox" name="send_gps_speed_to_ecu" {% if settings.send_gps_speed_to_ecu %}checked{% endif %}>
-    <span>Send GPS speed to ECU (nothing is sent without a GPS fix)</span>
-  </label>
-  <h1>Logging</h1>
-  <label class="toggle">
-    <input type="checkbox" name="logging_enabled" {% if settings.logging_enabled %}checked{% endif %}>
-    <span>Log each drive to CSV</span>
-  </label>
-  <button type="submit">Save</button>
+  <div class="settings-col">
+    <h1>Layout</h1>
+    <div class="segmented">
+      {% for l in layouts %}
+      <label><input type="radio" name="layout" value="{{ l }}" {% if settings.layout == l %}checked{% endif %}><span>{{ l | capitalize }}</span></label>
+      {% endfor %}
+    </div>
+    <label class="field">Shift light at
+      <input type="number" name="shift_rpm" min="1000" max="9000" step="100" value="{{ settings.shift_rpm }}"> rpm
+    </label>
+
+    <h1>Gauges</h1>
+    {% for g in gauges %}
+    <label class="toggle">
+      <input type="checkbox" name="shown" value="{{ g.id }}" {% if settings.gauge_visible(g.id) %}checked{% endif %}>
+      <span>{{ g.label }}</span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="settings-col">
+    <h1>GPS &amp; IMU</h1>
+    <label class="field">GPS rate
+      <select name="gps_rate_hz">
+        {% for r in ["1", "2", "5"] %}
+        <option value="{{ r }}" {% if settings.gps_rate_hz|int|string == r %}selected{% endif %}>{{ r }} Hz</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">IMU axis to the front
+      <select name="imu_forward_axis">
+        {% for a in axes %}<option {% if settings.imu_forward_axis == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">IMU axis up
+      <select name="imu_up_axis">
+        {% for a in axes %}<option {% if settings.imu_up_axis == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+    </label>
+    <p class="muted">GPS rate and IMU axes apply after a restart.</p>
+
+    <h1>ECU</h1>
+    <label class="toggle">
+      <input type="checkbox" name="send_gps_speed_to_ecu" {% if settings.send_gps_speed_to_ecu %}checked{% endif %}>
+      <span>Send GPS speed to ECU (nothing is sent without a GPS fix)</span>
+    </label>
+
+    <h1>Logging</h1>
+    <label class="toggle">
+      <input type="checkbox" name="logging_enabled" {% if settings.logging_enabled %}checked{% endif %}>
+      <span>Log each drive to CSV</span>
+    </label>
+
+    <button type="submit">Save</button>
+  </div>
 </form>
 {% endblock %}

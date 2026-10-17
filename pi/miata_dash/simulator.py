@@ -160,3 +160,37 @@ class FakeI2cBus:
 
     def close(self) -> None:
         pass
+
+
+class FakePipeline:
+    def __init__(self) -> None:
+        self.stopped = False
+
+    def poll(self) -> int | None:
+        return 0 if self.stopped else None
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class FakeRadioRunner:
+    """Pretends rtl_fm | aplay runs; rtl_power "finds" three stations."""
+
+    STATIONS_MHZ = (89.5, 94.2, 101.3)
+
+    def __init__(self) -> None:
+        self.started: list[tuple[list[str], list[str]]] = []
+
+    def start_pipeline(self, producer: list[str], consumer: list[str]) -> FakePipeline:
+        self.started.append((producer, consumer))
+        return FakePipeline()
+
+    def run(self, cmd: list[str], timeout: float) -> str:
+        step = 50_000
+        lo = 87_500_000
+        levels = []
+        for i in range(int((108_000_000 - lo) / step) + 1):
+            f = lo + i * step
+            near = min(abs(f - s * 1e6) for s in self.STATIONS_MHZ)
+            levels.append(-30.0 if near < step / 2 else -45.0)
+        return f"2026-10-17, 22:00:00, {lo}, 108000000, {step}, 16, " + ", ".join(map(str, levels)) + "\n"

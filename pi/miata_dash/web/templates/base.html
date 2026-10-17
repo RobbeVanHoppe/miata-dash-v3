@@ -6,10 +6,14 @@
   <title>{% block title %}Miata dash{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body {% block body_attrs %}{% endblock %}>
   <nav>
-    <a href="{{ url_for('dashboard') }}">Dash</a>
-    <a href="{{ url_for('settings_page') }}">Settings</a>
+    {% set here = request.endpoint %}
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if here == 'dashboard' }}">Dash</a>
+    <a href="{{ url_for('radio_page') }}" class="{{ 'active' if here == 'radio_page' }}">Radio</a>
+    <a href="{{ url_for('logs_page') }}" class="{{ 'active' if here == 'logs_page' }}">Logs</a>
+    <a href="{{ url_for('settings_page') }}" class="{{ 'active' if here == 'settings_page' }}">Settings</a>
+    {% block nav_extra %}{% endblock %}
   </nav>
   <main>{% block content %}{% endblock %}</main>
   {% block scripts %}{% endblock %}
