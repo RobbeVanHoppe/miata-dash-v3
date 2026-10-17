@@ -8,6 +8,7 @@ namespace canlink {
 
 static bool g_running = false;
 static uint32_t g_tx_errors = 0;
+static uint32_t g_bus_off = 0;
 
 bool begin(gpio_num_t tx, gpio_num_t rx) {
     twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT(tx, rx, TWAI_MODE_NORMAL);
@@ -54,6 +55,7 @@ void service() {
     twai_status_info_t s;
     if (twai_get_status_info(&s) != ESP_OK) return;
     if (s.state == TWAI_STATE_BUS_OFF) {
+        g_bus_off++;
         twai_initiate_recovery();  // waits for 128 x 11 recessive bits, then STOPPED
     } else if (s.state == TWAI_STATE_STOPPED && g_running) {
         twai_start();
@@ -61,5 +63,7 @@ void service() {
 }
 
 uint32_t tx_errors() { return g_tx_errors; }
+
+uint32_t bus_off_count() { return g_bus_off; }
 
 }  // namespace canlink

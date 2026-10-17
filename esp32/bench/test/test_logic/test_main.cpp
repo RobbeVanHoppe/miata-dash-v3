@@ -10,75 +10,198 @@ using namespace logic;
 void setUp() {}
 void tearDown() {}
 
-// Drive LightsOff in 10 ms steps.
-static LightsOff::Out run(LightsOff& l, uint32_t& t, uint32_t ms, bool ig1, bool head, bool en = true) {
-    LightsOff::Out acc;
-    for (uint32_t i = 0; i < ms; i += 10) {
-        t += 10;
-        LightsOff::Out o = l.update(t, ig1, head, en);
-        acc.pulse_set |= o.pulse_set;
-        acc.pulse_reset |= o.pulse_reset;
+// ---- main node: lights-off with a simulated latching relay -----------------------------
+// The relay's feedback contact follows a coil energised (with supply) for >= 30 ms,
+// and the hardware IG1 self-reset releases it 20 ms after key-on.
+struct Car {
+    LightsOff lights;
+    uint32_t t = 0;
+    bool ig1 = false, head = false, enabled = true;
+    bool fb = false, stuck = false, selfreset = true;
+    uint32_t set_ms = 0, reset_ms = 0, ig1_ms = 0;
+    int set_pulses = 0, reset_pulses = 0;
+    bool set_prev = false, reset_prev = false, both_on = false;
+
+    void run(uint32_t ms) {
+        for (uint32_t i = 0; i < ms; i++) {
+            t++;
+            const CoilSequencer::Drive d = lights.update(t, ig1, head, fb, enabled);
+            set_ms = d.vrly && d.set ? set_ms + 1 : 0;
+            reset_ms = d.vrly && d.reset ? reset_ms + 1 : 0;
+            ig1_ms = ig1 ? ig1_ms + 1 : 0;
+            if (d.set && !set_prev) set_pulses++;
+            if (d.reset && !reset_prev) reset_pulses++;
+            both_on |= d.set && d.reset;
+            set_prev = d.set;
+            reset_prev = d.reset;
+            if (!stuck) {
+                if (set_ms >= 30) fb = true;
+                if (reset_ms >= 30) fb = false;
+                if (selfreset && ig1_ms >= 20) fb = false;
+            }
+        }
     }
-    return acc;
+};
+
+void test_lights_off_after_3s_with_verified_pulse() {
+    Car c;
+    c.head = true;
+    c.ig1 = true;
+    c.run(500);
+    c.ig1 = false;
+    c.run(2950);
+    TEST_ASSERT_EQUAL(0, c.set_pulses);  // not yet
+    c.run(300);
+    TEST_ASSERT_EQUAL(1, c.set_pulses);
+    TEST_ASSERT_TRUE(c.fb);
+    TEST_ASSERT_TRUE(c.lights.latched());
+    TEST_ASSERT_FALSE(c.both_on);
 }
 
-void test_lights_off_after_3s() {
-    LightsOff l;
-    uint32_t t = 0;
-    run(l, t, 100, true, true);
-    TEST_ASSERT_FALSE(run(l, t, 2900, false, true).pulse_set);  // not yet
-    TEST_ASSERT_TRUE(run(l, t, 200, false, true).pulse_set);
-    TEST_ASSERT_TRUE(l.latched());
+void test_set_retries_three_times_then_fault() {
+    Car c;
+    c.head = true;
+    c.stuck = true;  // relay never moves
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(3000 + 3 * (5 + 100 + 50) + 2 * 500 + 200);
+    TEST_ASSERT_EQUAL(3, c.set_pulses);
+    TEST_ASSERT_TRUE(c.lights.faults() & fault::kSetFailed);
+    TEST_ASSERT_FALSE(c.lights.latched());
 }
 
-void test_key_back_on_cancels_countdown() {
-    LightsOff l;
-    uint32_t t = 0;
-    run(l, t, 100, true, true);
-    run(l, t, 1000, false, true);
-    LightsOff::Out o = run(l, t, 5000, true, true);
-    TEST_ASSERT_FALSE(o.pulse_set);
-    TEST_ASSERT_EQUAL(static_cast<int>(LightsOff::State::Idle), static_cast<int>(l.state()));
+void test_key_back_on_within_3s_cancels() {
+    Car c;
+    c.head = true;
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(1500);
+    c.ig1 = true;
+    c.run(5000);
+    TEST_ASSERT_EQUAL(0, c.set_pulses);
 }
 
-void test_no_action_when_lights_already_off_or_disabled() {
-    LightsOff a, b;
-    uint32_t t1 = 0, t2 = 0;
-    run(a, t1, 100, true, false);
-    TEST_ASSERT_FALSE(run(a, t1, 4000, false, false).pulse_set);
-    run(b, t2, 100, true, true, false);
-    TEST_ASSERT_FALSE(run(b, t2, 4000, false, true, false).pulse_set);
+void test_no_action_when_lights_off_or_disabled() {
+    Car a;
+    a.ig1 = true;
+    a.run(300);
+    a.ig1 = false;
+    a.run(4000);
+    TEST_ASSERT_EQUAL(0, a.set_pulses);
+    Car b;
+    b.head = true;
+    b.enabled = false;
+    b.ig1 = true;
+    b.run(300);
+    b.ig1 = false;
+    b.run(4000);
+    TEST_ASSERT_EQUAL(0, b.set_pulses);
 }
 
 void test_power_up_with_key_off_is_not_key_off_event() {
-    LightsOff l;
-    uint32_t t = 0;
-    TEST_ASSERT_FALSE(run(l, t, 5000, false, true).pulse_set);
+    Car c;
+    c.head = true;
+    c.run(5000);
+    TEST_ASSERT_EQUAL(0, c.set_pulses);
 }
 
-void test_stalk_toggle_overrides_and_key_on_resets() {
-    LightsOff l;
-    uint32_t t = 0;
-    run(l, t, 100, true, true);
-    run(l, t, 3200, false, true);
-    TEST_ASSERT_TRUE(l.latched());
-    TEST_ASSERT_TRUE(run(l, t, 50, false, false).pulse_reset);  // stalk moved
-    TEST_ASSERT_FALSE(l.latched());
-    // Latch again on the next key-off, then key-on resets it.
-    run(l, t, 100, true, true);
-    run(l, t, 3200, false, true);
-    TEST_ASSERT_TRUE(run(l, t, 20, true, true).pulse_reset);
+void test_stalk_off_head_overrides() {
+    Car c;
+    c.head = true;
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(3500);
+    TEST_ASSERT_TRUE(c.lights.latched());
+    c.head = false;  // driver moves the stalk
+    c.run(300);
+    TEST_ASSERT_EQUAL(1, c.reset_pulses);
+    TEST_ASSERT_FALSE(c.fb);
+    c.head = true;  // back to HEAD: factory behaviour, no new SET
+    c.run(5000);
+    TEST_ASSERT_EQUAL(1, c.set_pulses);
 }
 
-void test_snapshot_survives_sleep() {
-    LightsOff l;
-    uint32_t t = 0;
-    run(l, t, 100, true, true);
-    run(l, t, 3200, false, true);
+void test_key_on_hardware_self_reset_no_fault() {
+    Car c;
+    c.head = true;
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(3500);
+    c.ig1 = true;
+    c.run(500);
+    TEST_ASSERT_FALSE(c.fb);
+    TEST_ASSERT_EQUAL(0, c.reset_pulses);  // hardware handled it within the grace time
+    TEST_ASSERT_FALSE(c.lights.faults() & fault::kSetWithIg1);
+}
+
+void test_key_on_without_self_reset_firmware_resets_with_fault() {
+    Car c;
+    c.head = true;
+    c.selfreset = false;  // hardware path broken
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(3500);
+    c.ig1 = true;
+    c.run(600);
+    TEST_ASSERT_EQUAL(1, c.reset_pulses);
+    TEST_ASSERT_FALSE(c.fb);
+    TEST_ASSERT_TRUE(c.lights.faults() & fault::kSetWithIg1);
+}
+
+void test_hold_check_resets_dropout() {
+    Car c;
+    c.head = true;
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(3500);
+    c.fb = false;  // relay dropped out on its own while parked
+    c.lights.hold_check(c.t, c.head, c.fb);
+    c.run(400);
+    TEST_ASSERT_EQUAL(2, c.set_pulses);
+    TEST_ASSERT_TRUE(c.fb);
+    TEST_ASSERT_TRUE(c.lights.faults() & fault::kDroppedOut);
+}
+
+void test_sleep_only_when_settled() {
+    Car c;
+    c.head = true;
+    c.ig1 = true;
+    c.run(300);
+    c.ig1 = false;
+    c.run(3500);
+    TEST_ASSERT_FALSE(c.lights.can_sleep(c.t, 10000));
+    c.run(10000);
+    TEST_ASSERT_TRUE(c.lights.can_sleep(c.t, 10000));
     LightsOff woken;
-    woken.restore(l.save());
+    woken.restore(c.lights.save(), 0);
     TEST_ASSERT_TRUE(woken.latched());
-    TEST_ASSERT_TRUE(woken.update(t + 10, false, false, true).pulse_reset);
+}
+
+// ---- heartbeat ----------------------------------------------------------------------------
+void test_heartbeat_acquire_timeout_and_stuck_counter() {
+    Heartbeat h(1000);
+    h.feed(0, 10);
+    h.feed(100, 11);
+    TEST_ASSERT_FALSE(h.alive(150));  // needs 3 consecutive frames
+    h.feed(200, 12);
+    TEST_ASSERT_TRUE(h.alive(250));
+    for (uint32_t t = 300; t < 1300; t += 100) h.feed(t, 12);  // stuck application: same counter
+    TEST_ASSERT_FALSE(h.alive(1250));
+    h.feed(1300, 13);  // one good frame is not enough to come back
+    TEST_ASSERT_FALSE(h.alive(1310));
+    h.feed(1400, 14);
+    h.feed(1500, 15);
+    TEST_ASSERT_TRUE(h.alive(1510));
+    h.feed(1600, 255);  // gap/jump while alive: still a valid frame
+    h.feed(1700, 0);    // wraps 255 -> 0
+    TEST_ASSERT_TRUE(h.alive(2600));
+    TEST_ASSERT_FALSE(h.alive(2800));
 }
 
 void test_debounce_and_millis_wrap() {
@@ -91,14 +214,7 @@ void test_debounce_and_millis_wrap() {
     TEST_ASSERT_TRUE(d.update(t + 60, true));
 }
 
-void test_heartbeat() {
-    Heartbeat h(1000);
-    TEST_ASSERT_FALSE(h.alive(0));
-    h.feed(100);
-    TEST_ASSERT_TRUE(h.alive(1000));
-    TEST_ASSERT_FALSE(h.alive(1100));
-}
-
+// ---- knob ---------------------------------------------------------------------------------
 void test_haptics_detents_and_endstops() {
     Haptics h(3.0f);
     KnobProfile p;
@@ -145,14 +261,18 @@ void test_power_on_request() {
 void setup() {
     delay(2000);  // let the serial monitor attach
     UNITY_BEGIN();
-    RUN_TEST(test_lights_off_after_3s);
-    RUN_TEST(test_key_back_on_cancels_countdown);
-    RUN_TEST(test_no_action_when_lights_already_off_or_disabled);
+    RUN_TEST(test_lights_off_after_3s_with_verified_pulse);
+    RUN_TEST(test_set_retries_three_times_then_fault);
+    RUN_TEST(test_key_back_on_within_3s_cancels);
+    RUN_TEST(test_no_action_when_lights_off_or_disabled);
     RUN_TEST(test_power_up_with_key_off_is_not_key_off_event);
-    RUN_TEST(test_stalk_toggle_overrides_and_key_on_resets);
-    RUN_TEST(test_snapshot_survives_sleep);
+    RUN_TEST(test_stalk_off_head_overrides);
+    RUN_TEST(test_key_on_hardware_self_reset_no_fault);
+    RUN_TEST(test_key_on_without_self_reset_firmware_resets_with_fault);
+    RUN_TEST(test_hold_check_resets_dropout);
+    RUN_TEST(test_sleep_only_when_settled);
+    RUN_TEST(test_heartbeat_acquire_timeout_and_stuck_counter);
     RUN_TEST(test_debounce_and_millis_wrap);
-    RUN_TEST(test_heartbeat);
     RUN_TEST(test_haptics_detents_and_endstops);
     RUN_TEST(test_haptics_keeps_position_across_profile_change);
     RUN_TEST(test_power_on_request);

@@ -11,25 +11,39 @@ PlatformIO projects (Arduino framework on ESP32, platform `espressif32@6.9.0`).
 | `lib/canlink/` | TWAI (CAN) driver wrapper: 500 kbit/s, bus-off recovery. |
 | `lib/node_logic/` | Hardware-free logic (lights-off state machine, debounce, heartbeat, haptics, power-on request). |
 
-**Pin maps are PROVISIONAL** (`*/src/config.h`) until the hardware designs in
-miata-hw (`docs/design-main-node.md`, `docs/design-knob-node.md`) are final.
+**Pin maps:** the main node follows miata-hw `docs/design-main-node.md` §13
+(final). The knob node is still PROVISIONAL until `docs/design-knob-node.md` exists.
 
 ## Safety model (main node)
 
-- With no power, or before the firmware runs, every relay is released, which
-  is the factory circuit (board pull-downs, outputs written low first thing).
-- Pi-commanded relays (O02–O04) release when `PI_MAIN_CMD` is missing for 1 s.
-- Lights-off uses a latching relay: no current while parked. Key-on resets it
-  in hardware; the firmware also pulses RESET. Moving the stalk while latched
-  gives the lights back.
+- Before the firmware runs, and when it is dead, every relay is released: the
+  factory circuit (board pull-downs; outputs written low before becoming outputs).
+- Pi-commanded relays (O02–O04) need a live Pi heartbeat (3 consecutive
+  `PI_MAIN_CMD` frames with an advancing counter), drop 1 s after it stops,
+  and drop at key-off.
+- Lights-off uses latching relay RLY1: no current while parked. Every pulse is
+  verified on the relay's feedback contact (3 attempts). Key-on resets RLY1 in
+  hardware; the firmware checks after 200 ms and resets it if needed (fault bit 2).
+  Moving the stalk off HEAD while latched resets it (owner override).
 
-## Commands
+## Tests on a bare ESP32 (nothing wired to it)
+
+| What | Result (ESP32-WROOM-32D, 2026-10-18) |
+|---|---|
+| `bench` Unity tests of `node_logic` / `knob_logic` | 15/15 pass |
+| `bench` CAN self-test (TWAI loopback on one pin, generated pack/unpack) | 20/20 frames, 0 bus errors |
+| `tools/bench_main_node.py` on the `main-node-bench` build | 17/17 checks pass |
+
+## Commands (Windows dev machine)
+
+PlatformIO data lives on `D:\platformio` (C: is nearly full). PlatformIO's own
+upload and error output fail silently here, so use the helpers:
 
 ```bash
-python -m venv .pio-venv && .pio-venv/Scripts/pip install platformio   # once, from the repo root
-cd esp32/main-node && ../../.pio-venv/Scripts/pio run                   # build
-cd esp32/bench && ../../.pio-venv/Scripts/pio test                       # unit tests on a connected ESP32
-cd esp32/bench && ../../.pio-venv/Scripts/pio run -t upload -t monitor   # CAN self-test
+python -m venv .pio-venv && .pio-venv/Scripts/pip install platformio        # once
+python tools/pio_build.py esp32/main-node                                    # build (shows real compiler errors)
+.pio-venv/Scripts/python tools/flash_esp32.py D:/platformio/build/main-node/main-node-bench --port COM10 --core D:/platformio
+python tools/bench_main_node.py --port COM10                                 # hardware-in-the-loop scenarios
 # after changing can/miata.dbc:
-.venv/Scripts/python -m cantools generate_c_source can/miata.dbc --database-name miata -o esp32/lib/miata_can/src
+python -m cantools generate_c_source can/miata.dbc --database-name miata -o esp32/lib/miata_can/src
 ```

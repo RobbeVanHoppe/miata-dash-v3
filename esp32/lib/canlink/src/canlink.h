@@ -33,4 +33,7 @@ void service();
 // Frames dropped because the TX queue was full or the bus was off.
 uint32_t tx_errors();
 
+// Number of bus-off events seen by service().
+uint32_t bus_off_count();
+
 }  // namespace canlink
