@@ -13,9 +13,11 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from ..gauges import DEFAULT_GAUGES, LAYOUTS, Gauge
+from ..node_link import RelayRequests
 from ..radio import BANDS_BY_ID, RadioController
 from ..settings import SettingsStore
 from ..state import VehicleState
+from ..ui import UiState
 
 _LOG_NAME = re.compile(r"^\d{4,}_[\w-]+\.csv$")
 _AXES = ("+x", "-x", "+y", "-y", "+z", "-z")
@@ -27,9 +29,13 @@ def create_app(
     gauges: tuple[Gauge, ...] = DEFAULT_GAUGES,
     radio: RadioController | None = None,
     log_dir: str | Path | None = None,
+    ui: UiState | None = None,
+    relays: RelayRequests | None = None,
 ) -> Flask:
     app = Flask(__name__)
     logs = Path(log_dir) if log_dir else None
+    ui = ui or UiState()
+    relays = relays or RelayRequests()
 
     def save(**changes) -> None:
         store.save(replace(store.settings, **changes))
@@ -63,7 +69,27 @@ def create_app(
             step = int(body.get("step", 1))
             layout = LAYOUTS[(LAYOUTS.index(current) + step) % len(LAYOUTS)]
         save(layout=layout)
+        ui.request_reload()
         return jsonify({"layout": layout})
+
+    @app.post("/api/ui")
+    def api_ui():
+        """Polled by every page: reports where the screen is, returns knob navigation."""
+        body = request.get_json(silent=True) or {}
+        return jsonify(ui.report(str(body.get("page", "/"))))
+
+    @app.get("/api/relays")
+    def api_relays():
+        return jsonify(relays.snapshot())
+
+    @app.post("/api/relays")
+    def api_relays_set():
+        body = request.get_json(silent=True) or {}
+        try:
+            relays.set(str(body.get("relay")), bool(body.get("on")))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(relays.snapshot())
 
     # -- radio --------------------------------------------------------------
     @app.get("/radio")
@@ -140,6 +166,7 @@ def create_app(
             hidden_gauges=[g.id for g in gauges if g.id not in shown],
             send_gps_speed_to_ecu=form.get("send_gps_speed_to_ecu") == "on",
             logging_enabled=form.get("logging_enabled") == "on",
+            auto_lights_off=form.get("auto_lights_off") == "on",
         )
         if form.get("layout") in LAYOUTS:
             changes["layout"] = form["layout"]

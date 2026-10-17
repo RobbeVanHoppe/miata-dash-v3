@@ -49,6 +49,14 @@
       <span>Send GPS speed to ECU (nothing is sent without a GPS fix)</span>
     </label>
 
+    <label class="toggle">
+      <input type="checkbox" name="auto_lights_off" {% if settings.auto_lights_off %}checked{% endif %}>
+      <span>Headlights off 3 s after ignition off (stalk toggle overrides)</span>
+    </label>
+
+    <h1>Relays</h1>
+    <div class="relay-row" id="relays"><span class="muted">Relay loads still to be decided.</span></div>
+
     <h1>Logging</h1>
     <label class="toggle">
       <input type="checkbox" name="logging_enabled" {% if settings.logging_enabled %}checked{% endif %}>
@@ -58,4 +66,27 @@
     <button type="submit">Save</button>
   </div>
 </form>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Live relay toggles: requests go to the main node over CAN; releasing is the factory state.
+  (async function () {
+    const box = document.getElementById("relays");
+    async function render(state) {
+      box.replaceChildren(...Object.entries(state).map(([id, on]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "relay-btn" + (on ? " on" : "");
+        b.textContent = id + (on ? " ON" : " off");
+        b.addEventListener("click", async () => {
+          const r = await fetch("/api/relays", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                 body: JSON.stringify({ relay: id, on: !on }) });
+          render(await r.json());
+        });
+        return b;
+      }));
+    }
+    render(await (await fetch("/api/relays")).json());
+  })();
+</script>
 {% endblock %}

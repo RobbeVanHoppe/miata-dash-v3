@@ -194,3 +194,54 @@ class FakeRadioRunner:
             near = min(abs(f - s * 1e6) for s in self.STATIONS_MHZ)
             levels.append(-30.0 if near < step / 2 else -45.0)
         return f"2026-10-17, 22:00:00, {lo}, 108000000, {step}, 16, " + ", ".join(map(str, levels)) + "\n"
+
+
+class FakeMainNode:
+    """Main node on the virtual bus: echoes the Pi's relay requests in MAIN_STATUS
+    and releases them when PI_MAIN_CMD stops (heartbeat timeout), like the firmware."""
+
+    timeout_s = 1.0
+
+    def __init__(self, net_dbc_path: str | Path, channel: str) -> None:
+        self.db = cantools.database.load_file(str(net_dbc_path))
+        self.channel = channel
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="fake-main", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(2)
+
+    def _run(self) -> None:
+        cmd = self.db.get_message_by_name("PI_MAIN_CMD")
+        status = self.db.get_message_by_name("MAIN_STATUS")
+        relays = {"O02": 0, "O03": 0, "O04": 0}
+        last_cmd = -1e9
+        counter = 0
+        next_tx = time.monotonic()
+        with can.Bus(interface="virtual", channel=self.channel) as bus:
+            while not self._stop.is_set():
+                msg = bus.recv(timeout=0.02)
+                now = time.monotonic()
+                if msg is not None and msg.arbitration_id == cmd.frame_id:
+                    d = cmd.decode(msg.data)
+                    relays = {r: d[f"Pi_RelayReq_{r}"] for r in relays}
+                    last_cmd = now
+                timeout = now - last_cmd > self.timeout_s
+                if timeout:
+                    relays = dict.fromkeys(relays, 0)
+                if now >= next_tx:
+                    next_tx = now + 0.1
+                    counter = (counter + 1) & 0xFF
+                    bus.send(can.Message(arbitration_id=status.frame_id, is_extended_id=False, data=status.encode({
+                        "Main_IG1": 1, "Main_HeadSwitch": 0, "Main_Reverse": 0, "Main_LightsOffLatched": 0,
+                        **{f"Main_Relay_{r}": v for r, v in relays.items()},
+                        "Main_PiTimeout": int(timeout), "Main_Faults": 0, "Main_VBat": 13.9,
+                        "Main_Counter": counter,
+                    })))

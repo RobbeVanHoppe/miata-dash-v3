@@ -9,19 +9,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .fusion import SpeedEstimator
+from .knob import KnobController
 from .logger import DriveLogger
+from .node_link import PiNodeLink, RelayRequests
 from .radio import RadioController
 from .settings import SettingsStore
-from .simulator import FakeEcu, FakeI2cBus, FakeRadioRunner, FakeSerialGps
+from .simulator import FakeEcu, FakeI2cBus, FakeMainNode, FakeRadioRunner, FakeSerialGps
 from .sources import CanSource, DataSource, EcuSpeedSender, GpsSource
 from .sources.imu import ImuSource, Mounting
 from .state import VehicleState
+from .ui import UiState
 from .web import create_app
 
 log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DBC = REPO_ROOT / "can" / "ME1_4.dbc"
+NET_DBC = REPO_ROOT / "can" / "miata.dbc"  # our own nodes: Pi, main node, knob
 SIM_CHANNEL = "miata-sim"
 GPS_LOG_FIELDS = ("utc", "fix", "satellites", "latitude", "longitude", "altitude", "speed_kph", "course")
 EXTRA_LOG_FIELDS = ("ins.speed_kph", "ins.mode", "ins.sigma_kph", "imu.a_fwd", "imu.a_left", "imu.yaw_rate")
@@ -50,9 +54,15 @@ class Application:
         self.state = VehicleState()
         self.store = SettingsStore(config.settings_path)  # before sources: EcuSpeedSender reads it
         self.fake_ecu: FakeEcu | None = None
-        self.sources: list[DataSource] = self._build_sources()
+        self.fake_main: FakeMainNode | None = None
+        self.ui = UiState()
+        self.relays = RelayRequests()
         self.radio = self._build_radio()
-        self.web = create_app(self.state, self.store, radio=self.radio, log_dir=config.log_dir)
+        self.knob = KnobController(self.ui, self.store, self.radio)
+        self.sources: list[DataSource] = self._build_sources()
+        self.web = create_app(
+            self.state, self.store, radio=self.radio, log_dir=config.log_dir, ui=self.ui, relays=self.relays
+        )
 
     def _build_radio(self) -> RadioController:
         s = self.store.settings
@@ -68,7 +78,10 @@ class Application:
         if cfg.simulate:
             sim_start = time.monotonic()
             self.fake_ecu = FakeEcu(cfg.dbc_path, SIM_CHANNEL)
-            can_source = CanSource(self.state, cfg.dbc_path, interface="virtual", channel=SIM_CHANNEL)
+            self.fake_main = FakeMainNode(NET_DBC, SIM_CHANNEL)
+            can_source = CanSource(
+                self.state, cfg.dbc_path, "virtual", SIM_CHANNEL, extra_dbcs=((NET_DBC, "net."),)
+            )
             gps: GpsSource | None = GpsSource(
                 self.state,
                 serial_factory=functools.partial(FakeSerialGps, start=sim_start),
@@ -78,14 +91,20 @@ class Application:
                 self.state, mounting, lambda: FakeI2cBus(sim_start), self.estimator.on_imu
             )
         else:
-            can_source = CanSource(self.state, cfg.dbc_path, cfg.can_interface, cfg.can_channel)
+            can_source = CanSource(
+                self.state, cfg.dbc_path, cfg.can_interface, cfg.can_channel, extra_dbcs=((NET_DBC, "net."),)
+            )
             gps = (
                 GpsSource(self.state, cfg.gps_port, cfg.gps_baudrate, rate_hz=settings.gps_rate_hz)
                 if cfg.gps_port
                 else None
             )
             imu = ImuSource(self.state, mounting, on_sample=self.estimator.on_imu) if cfg.imu else None
-        sources: list[DataSource] = [can_source]
+        can_source.add_listener("KNOB_STATE", self.knob.on_frame)
+        sources: list[DataSource] = [
+            can_source,
+            PiNodeLink(self.state, can_source, self.store, self.relays, self.knob.profile),
+        ]
         if gps is not None:
             sources += [gps, EcuSpeedSender(self.state, can_source, self.store)]
         if imu is not None:
@@ -106,13 +125,15 @@ class Application:
     def start(self) -> None:
         for source in self.sources:
             source.start()
-        if self.fake_ecu is not None:
-            self.fake_ecu.start()
+        for fake in (self.fake_ecu, self.fake_main):
+            if fake is not None:
+                fake.start()
 
     def stop(self) -> None:
         self.radio.stop()
-        if self.fake_ecu is not None:
-            self.fake_ecu.stop()
+        for fake in (self.fake_ecu, self.fake_main):
+            if fake is not None:
+                fake.stop()
         for source in self.sources:
             source.stop()
 

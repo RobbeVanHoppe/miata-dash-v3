@@ -1,0 +1,80 @@
+VERSION "0.1"
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	BA_DEF_DEF_
+	SIG_VALTYPE_
+
+BS_:
+
+BU_: PI MAIN KNOB
+
+BO_ 1024 PI_MAIN_CMD: 8 PI
+ SG_ Pi_RelayReq_O02 : 0|1@1+ (1,0) [0|1] "" MAIN
+ SG_ Pi_RelayReq_O03 : 1|1@1+ (1,0) [0|1] "" MAIN
+ SG_ Pi_RelayReq_O04 : 2|1@1+ (1,0) [0|1] "" MAIN
+ SG_ Pi_AutoLightsOff_En : 8|1@1+ (1,0) [0|1] "" MAIN
+ SG_ Pi_Counter : 56|8@1+ (1,0) [0|255] "" MAIN
+
+BO_ 1040 MAIN_STATUS: 8 MAIN
+ SG_ Main_IG1 : 0|1@1+ (1,0) [0|1] "" PI,KNOB
+ SG_ Main_HeadSwitch : 1|1@1+ (1,0) [0|1] "" PI,KNOB
+ SG_ Main_Reverse : 2|1@1+ (1,0) [0|1] "" PI,KNOB
+ SG_ Main_LightsOffLatched : 3|1@1+ (1,0) [0|1] "" PI,KNOB
+ SG_ Main_Relay_O02 : 4|1@1+ (1,0) [0|1] "" PI
+ SG_ Main_Relay_O03 : 5|1@1+ (1,0) [0|1] "" PI
+ SG_ Main_Relay_O04 : 6|1@1+ (1,0) [0|1] "" PI
+ SG_ Main_PiTimeout : 7|1@1+ (1,0) [0|1] "" PI
+ SG_ Main_Faults : 8|8@1+ (1,0) [0|255] "" PI
+ SG_ Main_VBat : 16|16@1+ (0.01,0) [0|655.35] "V" PI
+ SG_ Main_Counter : 56|8@1+ (1,0) [0|255] "" PI
+
+BO_ 1056 PI_KNOB_PROFILE: 8 PI
+ SG_ Prof_Mode : 0|8@1+ (1,0) [0|255] "" KNOB
+ SG_ Prof_DetentsPerRev : 8|8@1+ (1,0) [0|255] "" KNOB
+ SG_ Prof_Strength : 16|8@1+ (1,0) [0|100] "%" KNOB
+ SG_ Prof_MinPos : 32|16@1- (1,0) [-32768|32767] "" KNOB
+ SG_ Prof_MaxPos : 48|16@1- (1,0) [-32768|32767] "" KNOB
+
+BO_ 1057 PI_KNOB_SETPOS: 8 PI
+ SG_ SetPos_Position : 0|16@1- (1,0) [-32768|32767] "" KNOB
+
+BO_ 1072 KNOB_STATE: 8 KNOB
+ SG_ Knob_Position : 0|16@1- (1,0) [-32768|32767] "" PI
+ SG_ Knob_Delta : 16|8@1- (1,0) [-128|127] "" PI
+ SG_ Knob_Pressed : 24|1@1+ (1,0) [0|1] "" PI
+ SG_ Knob_LongPress : 25|1@1+ (1,0) [0|1] "" PI
+ SG_ Knob_MotorOff : 26|1@1+ (1,0) [0|1] "" PI
+ SG_ Knob_Angle : 32|16@1+ (0.1,0) [0|360] "deg" PI
+ SG_ Knob_Counter : 56|8@1+ (1,0) [0|255] "" PI
+
+BO_ 1088 PI_STATUS: 8 PI
+ SG_ PiSt_State : 0|8@1+ (1,0) [0|255] "" MAIN,KNOB
+ SG_ PiSt_GpsFix : 8|1@1+ (1,0) [0|1] "" MAIN,KNOB
+ SG_ PiSt_Logging : 9|1@1+ (1,0) [0|1] "" MAIN,KNOB
+ SG_ PiSt_InsMode : 16|8@1+ (1,0) [0|255] "" MAIN,KNOB
+ SG_ PiSt_Counter : 56|8@1+ (1,0) [0|255] "" MAIN,KNOB
+
+
+CM_ BO_ 1024 "Pi -> main node, 10 Hz. Also the Pi heartbeat: the main node releases every Pi-commanded relay when this frame is missing for the heartbeat timeout (see esp32/main-node). Counter increments by 1 per frame.";
+CM_ SG_ 1024 Pi_AutoLightsOff_En "1 = main node may switch the headlights off 3 s after IG1 off. 0 = feature disabled. The main node keeps its last value while the Pi is off.";
+CM_ BO_ 1040 "Main node -> all, 10 Hz while awake.";
+CM_ SG_ 1040 Main_HeadSwitch "Headlight stalk in HEAD, sensed upstream of the lights-off interrupt.";
+CM_ SG_ 1040 Main_LightsOffLatched "Latching relay RLY1 is holding the HEAD line open (auto lights-off active).";
+CM_ SG_ 1040 Main_PiTimeout "1 = no PI_MAIN_CMD within the heartbeat timeout; Pi-commanded relays released.";
+CM_ SG_ 1040 Main_Faults "Bit flags, defined in esp32/main-node.";
+CM_ BO_ 1056 "Pi -> knob: haptic profile. Sent on change and at 2 Hz.";
+CM_ SG_ 1056 Prof_Strength "Detent torque as % of the configured maximum.";
+CM_ BO_ 1057 "Pi -> knob: jump to a position (e.g. after a page change) without a haptic event.";
+CM_ BO_ 1072 "Knob -> Pi, 20 Hz and on every change.";
+CM_ SG_ 1072 Knob_Delta "Detents moved since the previous frame (positive = clockwise).";
+CM_ SG_ 1072 Knob_MotorOff "Motor supply (9 V rail) missing, e.g. during cranking: knob works as a plain encoder.";
+CM_ BO_ 1088 "Pi -> all, 2 Hz. Absence means the Pi is off; the knob then acts as the power-on control (PI_ON_REQ).";
+VAL_ 1056 Prof_Mode 0 "free" 1 "detents" 2 "detents_endstops" 3 "fine_tuning" 4 "power_on_click" ;
+VAL_ 1088 PiSt_State 0 "booting" 1 "running" 2 "shutting_down" ;
+VAL_ 1088 PiSt_InsMode 0 "lost" 1 "gps" 2 "dr" ;

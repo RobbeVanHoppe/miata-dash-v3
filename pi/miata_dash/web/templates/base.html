@@ -16,6 +16,7 @@
     {% block nav_extra %}{% endblock %}
   </nav>
   <main>{% block content %}{% endblock %}</main>
+  <script src="{{ url_for('static', filename='ui.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

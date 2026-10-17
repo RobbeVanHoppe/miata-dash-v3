@@ -23,6 +23,7 @@ class Settings:
     stale_after_s: float = 2.0  # gauges grey out when their data is older than this
     send_gps_speed_to_ecu: bool = False  # off until ME221 behaviour on GPS dropout is known
     logging_enabled: bool = True
+    auto_lights_off: bool = True  # main node: headlights off + retract 3 s after IG1 off
     layout: str = "digital"  # digital | retro | motorsport
     shift_rpm: int = 6500  # shift light: driver preference, not a measured limit
     gps_rate_hz: float = 5.0  # NEO-6M max 5 Hz
