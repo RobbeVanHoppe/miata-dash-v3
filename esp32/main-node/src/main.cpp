@@ -12,6 +12,9 @@
 #include "config.h"
 #include "miata.h"
 #include "node_logic.h"
+#ifdef MAIN_BENCH
+#include "bench_io.h"
+#endif
 
 using logic::Debounce;
 using logic::Heartbeat;
@@ -34,7 +37,14 @@ static uint32_t last_status = 0, last_activity = 0;
 
 static const gpio_num_t kRelayPins[3] = {cfg::kRelayO02, cfg::kRelayO03, cfg::kRelayO04};
 
-static bool read_input(gpio_num_t pin, bool active_high) { return digitalRead(pin) == (active_high ? HIGH : LOW); }
+static bool read_input(gpio_num_t pin, bool active_high) {
+#ifdef MAIN_BENCH
+    if (pin == cfg::kIg1) return bench::ig1;
+    if (pin == cfg::kHead) return bench::head;
+    if (pin == cfg::kReverse) return bench::rev;
+#endif
+    return digitalRead(pin) == (active_high ? HIGH : LOW);
+}
 
 static float read_vbat() {
     if (cfg::kVbatDivider <= 0.0f) return 0.0f;
@@ -78,6 +88,13 @@ static void send_status(uint32_t now, float vbat) {
 }
 
 static void go_to_sleep() {
+#ifdef MAIN_BENCH
+    // Bench: report instead of sleeping (deep sleep would drop the USB serial link).
+    static bool reported = false;
+    if (!reported) Serial.printf("T=%lu EVENT sleep\n", (unsigned long)millis());
+    reported = true;
+    return;
+#endif
     rtc_lights = lights.save();
     rtc_auto_enabled = auto_enabled;
     rtc_valid = true;
@@ -107,6 +124,10 @@ void setup() {
     }
     gpio_deep_sleep_hold_dis();
     outputs_off();
+#ifdef MAIN_BENCH
+    Serial.begin(115200);
+    Serial.printf("T=%lu BOOT main-node bench\n", (unsigned long)millis());
+#endif
     pinMode(cfg::kIg1, INPUT);  // GPIO34-39: input only, pulls are on the board
     pinMode(cfg::kHead, INPUT);
     pinMode(cfg::kReverse, INPUT);
@@ -124,7 +145,9 @@ void setup() {
 
     digitalWrite(cfg::kCanPower, HIGH);
     delay(2);  // transceiver start-up
+#ifndef MAIN_BENCH  // bench: no transceiver; Pi frames are injected below
     canlink::begin(cfg::kCanTx, cfg::kCanRx);
+#endif
     last_activity = now;
 }
 
@@ -134,6 +157,24 @@ void loop() {
 
     canlink::Frame f;
     while (canlink::receive(f)) handle_frame(f, now);
+#ifdef MAIN_BENCH
+    bench::poll_serial();
+    static uint32_t last_pi = 0;
+    static uint8_t pi_counter = 0;
+    if (bench::pi_on && logic::elapsed(now, last_pi) >= 100) {  // the Pi sends PI_MAIN_CMD at 10 Hz
+        last_pi = now;
+        miata_pi_main_cmd_t m = {};
+        m.pi_relay_req_o02 = bench::req[0];
+        m.pi_relay_req_o03 = bench::req[1];
+        m.pi_relay_req_o04 = bench::req[2];
+        m.pi_auto_lights_off_en = bench::auto_en;
+        m.pi_counter = pi_counter++;
+        f.id = MIATA_PI_MAIN_CMD_FRAME_ID;
+        f.len = MIATA_PI_MAIN_CMD_LENGTH;
+        miata_pi_main_cmd_pack(f.data, &m, sizeof f.data);
+        handle_frame(f, now);
+    }
+#endif
 
     const bool ig1_on = ig1.update(now, read_input(cfg::kIg1, cfg::kIg1ActiveHigh));
     const bool head_on = head.update(now, read_input(cfg::kHead, cfg::kHeadActiveHigh));
@@ -149,7 +190,14 @@ void loop() {
     digitalWrite(cfg::kRly1Reset, reset_on ? HIGH : LOW);
 
     const bool pi_ok = pi.alive(now);
-    for (int i = 0; i < 3; i++) digitalWrite(kRelayPins[i], (pi_ok && relay_req[i]) ? HIGH : LOW);
+    bool relay_on[3];
+    for (int i = 0; i < 3; i++) {
+        relay_on[i] = pi_ok && relay_req[i];
+        digitalWrite(kRelayPins[i], relay_on[i] ? HIGH : LOW);
+    }
+#ifdef MAIN_BENCH
+    bench::log_outputs(now, set_on, reset_on, relay_on);
+#endif
 
     if (logic::elapsed(now, last_status) >= cfg::kStatusPeriodMs) {
         last_status = now;
