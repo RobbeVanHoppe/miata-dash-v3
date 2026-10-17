@@ -19,7 +19,7 @@ def test_generated_c_matches_dbc(tmp_path):
     subprocess.run(
         [sys.executable, "-m", "cantools", "generate_c_source", str(ROOT / "can" / "miata.dbc"),
          "--database-name", "miata", "-o", str(tmp_path)],
-        check=True, capture_output=True,
+        check=True, capture_output=True, stdin=subprocess.DEVNULL,  # no inherited console handle on Windows
     )
     for name in ("miata.h", "miata.c"):
         fresh = normalise((tmp_path / name).read_text(encoding="utf-8"))
