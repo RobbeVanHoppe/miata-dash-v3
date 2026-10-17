@@ -4,40 +4,43 @@ Software for the 1989 Mazda MX-5 NA head unit. Hardware lives in
 [miata-hw](https://github.com/RobbeVanHoppe/miata-hw).
 
 ```
-ME221 ECU ──┐
-            ├── CAN (shielded twisted pair) ──┐
-ESP32 node ─┘   relays, analog/digital inputs  │
-                                               │
-GY-GPS6MV2 ── UART ── Raspberry Pi 3B ─────────┘
-                      Flask dashboard on 7" 1024x600 touchscreen
-                      WiFi = client of phone hotspot (internet)
+ME221 ECU ─── CAN 500 kbit/s (shielded twisted pair) ───┬──────────────┬── main node (ESP32)
+(end 1)                                                 │              │   relays, inputs, lights-off
+                                                        │              │   (end 2, 120 Ω)
+GY-GPS6MV2 ── UART ─┐                                   │              │
+MPU6050 ──── I²C ───┼── Raspberry Pi 3B ── MCP2518FD ───┘   knob node (ESP32, haptic BLDC)
+RTL-SDR ──── USB ───┘   Flask dashboard, 7" 1024x600 touch
+                        WiFi = client of phone hotspot
+Power supply board: supervisor starts the Pi after the engine runs, shuts it down cleanly.
 ```
 
 | Folder | What |
 |---|---|
-| `can/` | CAN message definitions (DBC). `ME1_4.dbc` = ME221 broadcast. |
+| `can/` | `ME1_4.dbc` = ME221 broadcast; `miata.dbc` = our nodes (Pi, main node, knob). |
 | `pi/` | Python package `miata_dash` + tests. |
-| `esp32/` | ESP32 node firmware (not started). |
-| `deploy/` | systemd unit for the Pi. |
+| `esp32/` | ESP32 firmware for the main node and the knob node. |
+| `deploy/` | Pi config files: boot overlays, CAN interface, service, kiosk, RTL-SDR driver blacklist. |
 
 ## Code layout (`pi/miata_dash`)
 
 | Module | Role |
 |---|---|
-| `state.VehicleState` | Thread-safe latest value + timestamp of every signal (`ecu.RPM`, `gps.speed_kph`, …). |
+| `state.VehicleState` | Thread-safe latest value + timestamp of every signal (`ecu.RPM`, `gps.speed_kph`, `net.Main_IG1`, …). |
 | `sources.DataSource` | Base class: background thread, reopens the device after any error. |
-| `sources.CanSource` | Decodes CAN with the DBC; every DBC signal becomes `ecu.<name>`. |
-| `sources.GpsSource` + `sources.nmea` | Reads NMEA (RMC/VTG/GGA) from the GPS into `gps.*`. |
-| `gauges` | What the dashboard shows (signal, unit, display range). |
+| `sources.CanSource` | Decodes CAN with both DBCs (`ecu.*`, `net.*`), per-message listeners, sending. |
+| `sources.GpsSource` + `nmea` + `ubx` | NEO-6M: NMEA in, UBX setup out (RMC+GGA at 5 Hz). |
+| `sources.imu` | MPU6050 at 100 Hz, mounting axes + automatic levelling. |
+| `fusion.SpeedEstimator` | GPS/IMU Kalman filter: `ins.speed_kph`, bridges GPS dropouts ("DR"). |
+| `radio.RadioController` | RTL-SDR: `rtl_fm` → `aplay`, bands, squelch, presets, FM scan (`rtl_power`). |
+| `knob.KnobController` | Knob turns/presses → page, layout, radio tuning; haptic profile per page. |
+| `node_link.PiNodeLink` | Pi frames on CAN: relay requests + heartbeat, status, knob profile. |
+| `ui.UiState` | Which page is on screen; lets the knob navigate the browser. |
+| `gauges` | What the dashboard shows (signals with fallbacks, ranges, dial ticks). |
 | `settings.SettingsStore` | User settings as JSON, written atomically (safe on power loss). |
-| `web.create_app` | Flask: `/` dashboard, `/settings`, `/api/state` (JSON, polled at 10 Hz). |
-| `logger.DriveLogger` | One CSV per drive in `~/miata-logs` (10 Hz, all ECU + GPS signals). Starts when RPM > 0, ends 60 s after the engine stops. |
-| `simulator` | Fake ECU (real DBC encoding on a virtual CAN bus) and fake GPS. |
-| `app.Application` | Wires it all together. |
-
-Adding a sensor = a new `DataSource` subclass writing into `VehicleState`,
-plus a `Gauge` entry. Hiding or showing a gauge (e.g. AFR before the
-wideband is fitted) is done on the settings page.
+| `logger.DriveLogger` | One CSV per drive (10 Hz, ECU + GPS + INS). Starts at RPM > 0, ends 60 s after the engine stops. |
+| `web.create_app` | Flask pages: Dash (digital / retro / motorsport), Radio, Logs, Settings + JSON APIs. |
+| `simulator` | Fake ME221, main node, GPS (with tunnels), MPU6050 and radio. |
+| `app.Application` | Wires it together; SIGTERM → clean stop (log flushed, shutdown announced on CAN). |
 
 ## Run on a PC (no hardware)
 
@@ -51,49 +54,42 @@ python -m venv .venv
 
 ## Raspberry Pi 3B setup
 
-Raspberry Pi OS Bookworm assumed. Values marked **TBD** depend on parts or
-ECU settings that are not decided yet; do not guess them.
+Raspberry Pi OS Bookworm (desktop, for the kiosk browser). Values marked
+**TBD** depend on parts that are not chosen yet; do not guess them.
 
-1. **GPS UART.** The Pi 3B's good UART (PL011) is used by Bluetooth by default.
-   In `/boot/firmware/config.txt`:
-   ```
-   enable_uart=1
-   dtoverlay=disable-bt
-   ```
-   Then `sudo systemctl disable hciuart`, and in `raspi-config` → Interface →
-   Serial Port: login shell **No**, hardware **Yes**. The GPS is then `/dev/serial0`.
-   Power the GY-GPS6MV2 from 5 V; check that its TX idles at ~3.3 V first.
-2. **CAN.** CAN interface for the Pi: **TBD** (hardware design). For an
-   MCP2515-based board:
-   ```
-   dtparam=spi=on
-   dtoverlay=mcp2515-can0,oscillator=<crystal Hz, TBD>,interrupt=<GPIO, TBD>
-   ```
-   Bring `can0` up at boot, e.g. `/etc/systemd/network/80-can.network`:
-   ```
-   [Match]
-   Name=can0
-   [CAN]
-   BitRate=500000
-   ```
-   and `sudo systemctl enable --now systemd-networkd`.
-3. **WiFi.** The Pi 3B only has 2.4 GHz WiFi: set the phone hotspot to
+1. **Boot config.** Append `deploy/boot-config.txt` to `/boot/firmware/config.txt`.
+   It moves Bluetooth off the good UART (GPS on `/dev/serial0`), enables I²C
+   (MPU6050) and SPI + the MCP2518FD overlay (interrupt GPIO **TBD** per HAT),
+   and sets up the power-supervisor handshake: GPIO17 = shutdown request
+   (`gpio-shutdown`), GPIO26 = "halted" (`gpio-poweroff`).
+   Then `sudo systemctl disable hciuart`, and `raspi-config` → Interface →
+   Serial Port: login shell **No**, hardware **Yes**.
+2. **CAN.** `sudo cp deploy/80-can.network /etc/systemd/network/` and
+   `sudo systemctl enable --now systemd-networkd` (500 kbit/s).
+3. **RTL-SDR.** `sudo apt install rtl-sdr alsa-utils` and
+   `sudo cp deploy/blacklist-rtl.conf /etc/modprobe.d/`. The ALSA output device
+   is a setting (`radio_audio_device`); the path to the car speakers is **TBD**.
+4. **WiFi.** The Pi 3B only has 2.4 GHz WiFi: set the phone hotspot to
    2.4 GHz / "maximise compatibility".
-4. **Install.**
+5. **Writable data partition.** Make a small ext4 partition mounted at `/data`
+   (settings + drive logs), then turn on the read-only overlay for the root
+   filesystem (`raspi-config` → Performance → Overlay File System). Power cuts
+   then cannot corrupt the system; only `/data` is written, and the app writes it
+   safely (atomic settings, fsync'd logs).
+6. **Install.**
    ```bash
+   sudo mkdir -p /data/miata-dash /data/miata-logs && sudo chown -R $USER /data
    git clone https://github.com/RobbeVanHoppe/miata-dash-v3.git ~/miata-dash-v3
    cd ~/miata-dash-v3 && python -m venv .venv && .venv/bin/pip install -e .
    mkdir -p ~/.config/systemd/user && cp deploy/miata-dash.service ~/.config/systemd/user/
    systemctl --user enable --now miata-dash
    sudo loginctl enable-linger $USER
    ```
-5. **Kiosk.** Open `http://127.0.0.1:5000` full-screen in Chromium (`--kiosk`).
+7. **Kiosk.** `mkdir -p ~/.config/autostart && cp deploy/kiosk.desktop ~/.config/autostart/`
+   (waits for the dashboard, then opens Chromium full-screen).
 
 ## Not done yet
 
-- Safe shutdown after ignition off (needs the power board). Logs need a
-  writable partition even if the root filesystem is made read-only.
-- Haptic knob next to the display (hardware not designed yet).
-- ESP32 ↔ Pi CAN messages (`can/miata.dbc`) and ESP32 firmware.
-- Uploading logs to a database, NEO-6M 5 Hz configuration, IMU dead reckoning, extra I²C sensors.
-- Warning thresholds per gauge.
+- ESP32 firmware for the main node and knob (pin maps follow the hardware designs).
+- Uploading logs to a database; extra I²C sensors; warning thresholds per gauge.
+- Car audio path for the radio (TBD).

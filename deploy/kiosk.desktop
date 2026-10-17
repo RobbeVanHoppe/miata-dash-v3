@@ -1,0 +1,5 @@
+# ~/.config/autostart/kiosk.desktop — full-screen dashboard after login.
+[Desktop Entry]
+Type=Application
+Name=Miata dash kiosk
+Exec=sh -c 'until curl -sf http://127.0.0.1:5000/ >/dev/null; do sleep 1; done; chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --check-for-update-interval=31536000 http://127.0.0.1:5000/'

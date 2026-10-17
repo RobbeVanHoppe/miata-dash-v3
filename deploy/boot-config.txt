@@ -1,0 +1,19 @@
+# Append to /boot/firmware/config.txt (Raspberry Pi OS Bookworm, Pi 3B).
+
+# GPS on the good UART (PL011): Bluetooth off.
+enable_uart=1
+dtoverlay=disable-bt
+
+# MPU6050 on I2C bus 1 (GPIO2/3).
+dtparam=i2c_arm=on
+
+# MCP2518FD CAN HAT. interrupt GPIO and oscillator depend on the HAT: TBD,
+# check the HAT's documentation (Waveshare 2-CH CAN FD HAT defaults must be verified).
+dtparam=spi=on
+dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=25
+
+# Power supervisor handshake (docs/design-power.md in miata-hw, sec. 18):
+# the PSB pulls GPIO17 low (open collector) to request a clean shutdown ...
+dtoverlay=gpio-shutdown,gpio_pin=17,active_low=1,gpio_pull=up
+# ... and GPIO26 goes high once the Pi has halted, so the PSB may cut power.
+dtoverlay=gpio-poweroff,gpiopin=26

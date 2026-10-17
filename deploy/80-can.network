@@ -1,0 +1,7 @@
+# /etc/systemd/network/80-can.network — brings can0 up at the ME221's bit rate.
+[Match]
+Name=can0
+
+[CAN]
+BitRate=500000
+RestartSec=100ms

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import signal
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,10 +102,8 @@ class Application:
             )
             imu = ImuSource(self.state, mounting, on_sample=self.estimator.on_imu) if cfg.imu else None
         can_source.add_listener("KNOB_STATE", self.knob.on_frame)
-        sources: list[DataSource] = [
-            can_source,
-            PiNodeLink(self.state, can_source, self.store, self.relays, self.knob.profile),
-        ]
+        self.node_link = PiNodeLink(self.state, can_source, self.store, self.relays, self.knob.profile)
+        sources: list[DataSource] = [can_source, self.node_link]
         if gps is not None:
             sources += [gps, EcuSpeedSender(self.state, can_source, self.store)]
         if imu is not None:
@@ -130,6 +129,13 @@ class Application:
                 fake.start()
 
     def stop(self) -> None:
+        """Orderly shutdown: tell the other nodes, then close devices and the drive log.
+
+        Runs on SIGTERM too (systemd stops the service when the supervisor asks
+        the Pi to shut down), so the CSV is flushed before power goes.
+        """
+        self.node_link.pi_state = "shutting_down"
+        self.node_link.tick(force_status=True)  # announce on CAN before the bus closes
         self.radio.stop()
         for fake in (self.fake_ecu, self.fake_main):
             if fake is not None:
@@ -138,9 +144,16 @@ class Application:
             source.stop()
 
     def run(self) -> None:
+        signal.signal(signal.SIGTERM, _raise_exit)
         self.start()
         try:
             log.info("dashboard on http://%s:%d", self.config.host, self.config.port)
             self.web.run(host=self.config.host, port=self.config.port, threaded=True)
         finally:
             self.stop()
+            log.info("stopped cleanly")
+
+
+def _raise_exit(signum, frame) -> None:
+    # Python's default SIGTERM kills without running finally-blocks; turn it into SystemExit.
+    raise SystemExit(0)

@@ -1,12 +1,15 @@
 # systemd user unit: ~/.config/systemd/user/miata-dash.service
+# Settings and logs live on the writable /data partition (see README: read-only root).
 [Unit]
 Description=Miata dashboard
 After=network.target
 
 [Service]
-ExecStart=%h/miata-dash-v3/.venv/bin/miata-dash
+ExecStart=%h/miata-dash-v3/.venv/bin/miata-dash --settings /data/miata-dash/settings.json --log-dir /data/miata-logs
 Restart=always
 RestartSec=2
+# SIGTERM flushes the drive log and announces the shutdown on CAN; give it time.
+TimeoutStopSec=10
 
 [Install]
 WantedBy=default.target

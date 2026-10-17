@@ -71,7 +71,7 @@ class PiNodeLink(DataSource):
         self._stop.wait(self.period)
         self.tick()
 
-    def tick(self) -> None:
+    def tick(self, force_status: bool = False) -> None:
         self._tick += 1
         counter = self._tick & 0xFF
         relays = self.relays.snapshot()
@@ -84,7 +84,7 @@ class PiNodeLink(DataSource):
         if profile != self._last_profile or self._tick % 5 == 0:
             self.can.send_named("PI_KNOB_PROFILE", profile)
             self._last_profile = profile
-        if self._tick % 5 == 0:
+        if force_status or self._tick % 5 == 0:
             self.can.send_named("PI_STATUS", {
                 "PiSt_State": PI_STATE[self.pi_state],
                 "PiSt_GpsFix": int(self.state.value("gps.fix", max_age=2.0) is True),

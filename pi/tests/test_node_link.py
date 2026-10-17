@@ -143,3 +143,24 @@ def test_relay_request_round_trip_through_fake_main_node(tmp_path):
         assert wait_for(lambda: app.state.value("net.Main_Relay_O02") == 0)
     finally:
         app.stop()
+
+
+def test_stop_announces_shutdown_and_closes_drive_log(tmp_path):
+    app = Application(AppConfig(simulate=True, settings_path=tmp_path / "s.json", log_dir=tmp_path / "logs"))
+    seen = []
+    app.fake_main = None  # listen ourselves instead
+    app.start()
+    try:
+        assert wait_for(lambda: app.state.value("ecu.RPM") is not None)
+        assert wait_for(lambda: list((tmp_path / "logs").glob("*.csv")))
+        bus = can.Bus(interface="virtual", channel="miata-sim")
+    finally:
+        app.stop()
+    status_id = app.node_link.can.message("PI_STATUS").frame_id
+    while (msg := bus.recv(timeout=0.2)) is not None:
+        if msg.arbitration_id == status_id:
+            seen.append(app.node_link.can.message("PI_STATUS").decode(msg.data, decode_choices=False)["PiSt_State"])
+    bus.shutdown()
+    assert seen and seen[-1] == 2  # shutting_down
+    log = next((tmp_path / "logs").glob("*.csv"))
+    assert log.read_text(encoding="utf-8").count("\n") >= 2  # header + rows flushed
