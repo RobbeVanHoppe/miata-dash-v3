@@ -4,6 +4,7 @@
 
 #include "knob_logic.h"
 #include "node_logic.h"
+#include "supervisor_logic.h"
 
 using namespace logic;
 
@@ -285,6 +286,141 @@ void test_thermal_limiter() {
     TEST_ASSERT_TRUE(t.rms() < 0.15f);  // 5 tau: sqrt(1.69 x e^-5) = 0.107 V
 }
 
+// ---- power supervisor (ATtiny84A logic) ------------------------------------------------------
+struct Psb {
+    sup::Supervisor s;
+    sup::Inputs in;
+    sup::Outputs out;
+    uint32_t t = 0;
+    void run(uint32_t ms) {
+        for (uint32_t i = 0; i < ms; i += 10) {
+            t += 10;
+            out = s.update(t, in);
+        }
+    }
+};
+
+void test_sup_pi_starts_only_when_engine_runs() {
+    Psb p;
+    p.in.vbat_mv = 12600;
+    p.in.ign = true;
+    p.run(10000);
+    TEST_ASSERT_FALSE(p.out.en5v);  // key on, engine off: Pi stays off
+    TEST_ASSERT_TRUE(p.out.knob);
+    p.in.vbat_mv = 9000;  // cranking dip
+    p.run(1500);
+    TEST_ASSERT_FALSE(p.out.en5v);
+    p.in.vbat_mv = 14100;  // alternator charging
+    p.run(2900);
+    TEST_ASSERT_FALSE(p.out.en5v);
+    p.run(200);
+    TEST_ASSERT_TRUE(p.out.en5v && p.out.hold && !p.out.shdn);
+}
+
+void test_sup_clean_shutdown_sequence() {
+    Psb p;
+    p.in.vbat_mv = 14100;
+    p.in.ign = true;
+    p.run(4000);
+    p.in.ign = false;
+    p.in.vbat_mv = 12600;
+    p.run(9900);
+    TEST_ASSERT_FALSE(p.out.shdn);  // 10 s key-off debounce
+    p.run(200);
+    TEST_ASSERT_TRUE(p.out.shdn && p.out.en5v);
+    p.in.pwroff = true;  // Pi halted
+    p.run(2100);
+    TEST_ASSERT_TRUE(p.out.en5v);  // still powered: T_POST margin
+    p.run(10000);
+    TEST_ASSERT_FALSE(p.out.en5v || p.out.hold || p.out.shdn);
+}
+
+void test_sup_hung_pi_forced_cut_after_5_min() {
+    Psb p;
+    p.in.vbat_mv = 14100;
+    p.in.ign = true;
+    p.run(4000);
+    p.in.ign = false;
+    p.run(10100);
+    TEST_ASSERT_TRUE(p.out.shdn);
+    p.run(299000);
+    TEST_ASSERT_TRUE(p.out.en5v);
+    p.run(1100);
+    TEST_ASSERT_FALSE(p.out.en5v);
+}
+
+void test_sup_low_battery_shutdown() {
+    Psb p;
+    p.in.vbat_mv = 14100;
+    p.in.ign = true;
+    p.run(4000);
+    p.in.vbat_mv = 11500;  // stalled engine, key left in RUN
+    p.run(29000);
+    TEST_ASSERT_FALSE(p.out.shdn);
+    p.run(1100);
+    TEST_ASSERT_TRUE(p.out.shdn);
+    TEST_ASSERT_TRUE(p.s.lowbat_lockout());
+}
+
+void test_sup_manual_power_on_from_knob() {
+    Psb a;
+    a.in.acc = true;
+    a.in.vbat_mv = 12000;  // below the 12.1 V re-arm level
+    a.in.req = true;
+    a.run(500);
+    TEST_ASSERT_FALSE(a.out.en5v);
+    a.in.vbat_mv = 12400;
+    a.run(200);
+    TEST_ASSERT_TRUE(a.out.en5v);
+    TEST_ASSERT_EQUAL(static_cast<int>(sup::State::OnManual), static_cast<int>(a.s.state()));
+    a.in.req = false;
+    a.in.acc = false;  // key out
+    a.run(10100);
+    TEST_ASSERT_TRUE(a.out.shdn);
+}
+
+void test_sup_knob_rail_survives_start_and_holds() {
+    Psb p;
+    p.in.vbat_mv = 12600;
+    p.in.acc = true;
+    p.run(1000);
+    TEST_ASSERT_TRUE(p.out.knob);
+    p.in.acc = false;  // START: ACC drops, IG1 stays (diagram)
+    p.in.ign = true;
+    p.run(3000);
+    TEST_ASSERT_TRUE(p.out.knob);
+    p.in.ign = false;
+    p.run(4900);
+    TEST_ASSERT_TRUE(p.out.knob);  // 5 s hold
+    p.run(200);
+    TEST_ASSERT_FALSE(p.out.knob);
+    TEST_ASSERT_TRUE(p.s.can_sleep(p.out));
+}
+
+void test_sup_poweroff_ignored_outside_shutdown() {
+    Psb p;
+    p.in.vbat_mv = 14100;
+    p.in.ign = true;
+    p.run(4000);
+    p.in.pwroff = true;  // the overlay also toggles GPIO26 on a reboot
+    p.run(5000);
+    TEST_ASSERT_TRUE(p.out.en5v && !p.out.shdn);
+}
+
+void test_sup_power_on_recovery() {
+    sup::Supervisor s;
+    sup::Inputs in;
+    in.ign = true;
+    in.bank_mv = 4300;
+    in.vbat_mv = 14000;
+    s.power_on_init(0, in);
+    TEST_ASSERT_TRUE(s.update(10, in).en5v);  // Pi was on: keep it on
+    sup::Supervisor cold;
+    in.bank_mv = 500;
+    cold.power_on_init(0, in);
+    TEST_ASSERT_FALSE(cold.update(10, in).en5v);
+}
+
 void setup() {
     delay(2000);  // let the serial monitor attach
     UNITY_BEGIN();
@@ -305,6 +441,14 @@ void setup() {
     RUN_TEST(test_power_on_request);
     RUN_TEST(test_motor_gate_hysteresis_and_fault);
     RUN_TEST(test_thermal_limiter);
+    RUN_TEST(test_sup_pi_starts_only_when_engine_runs);
+    RUN_TEST(test_sup_clean_shutdown_sequence);
+    RUN_TEST(test_sup_hung_pi_forced_cut_after_5_min);
+    RUN_TEST(test_sup_low_battery_shutdown);
+    RUN_TEST(test_sup_manual_power_on_from_knob);
+    RUN_TEST(test_sup_knob_rail_survives_start_and_holds);
+    RUN_TEST(test_sup_poweroff_ignored_outside_shutdown);
+    RUN_TEST(test_sup_power_on_recovery);
     UNITY_END();
 }
 
