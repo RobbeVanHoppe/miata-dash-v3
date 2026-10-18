@@ -30,7 +30,7 @@ PlatformIO projects (Arduino framework on ESP32, platform `espressif32@6.9.0`).
 
 | What | Result (ESP32-WROOM-32D, 2026-10-18) |
 |---|---|
-| `bench` Unity tests of `node_logic` / `knob_logic` | 17/17 pass |
+| `bench` Unity tests of `node_logic`, `knob_logic` and the supervisor logic | 25/25 pass |
 | `bench` CAN self-test (TWAI loopback on one pin, generated pack/unpack) | 20/20 frames, 0 bus errors |
 | `tools/bench_main_node.py` on the `main-node-bench` build | 17/17 checks pass |
 
