@@ -134,4 +134,61 @@ class PowerOnRequest {
     uint32_t fired_at_ = 0;
 };
 
+// Motor enable gate (design-knob-node §16): on after VM >= on_v for hold_ms with the
+// driver's nFAULT high; off immediately when VM < off_v or nFAULT goes low.
+class MotorGate {
+   public:
+    MotorGate(float on_v, float off_v, uint32_t hold_ms) : on_v_(on_v), off_v_(off_v), hold_ms_(hold_ms) {}
+    bool update(uint32_t now, float vm, bool fault_ok) {
+        if (enabled_) {
+            if (vm < off_v_ || !fault_ok) enabled_ = false;
+        } else if (vm >= on_v_ && fault_ok) {
+            if (!pending_) {
+                pending_ = true;
+                since_ = now;
+            } else if (elapsed(now, since_) >= hold_ms_) {
+                enabled_ = true;
+            }
+        }
+        if (!(vm >= on_v_ && fault_ok)) pending_ = false;
+        return enabled_;
+    }
+    bool enabled() const { return enabled_; }
+
+   private:
+    float on_v_, off_v_;
+    uint32_t hold_ms_;
+    bool enabled_ = false, pending_ = false;
+    uint32_t since_ = 0;
+};
+
+// Motor heating limit (design-knob-node §6.2): the running mean of U_q^2 over about
+// `window_s` must stay <= limit_v^2. Short haptic bursts at full voltage pass; holding
+// full torque against an end stop is throttled down to limit_v RMS.
+class ThermalLimiter {
+   public:
+    ThermalLimiter(float limit_v, float window_s)
+        : limit_v_(limit_v), limit_sq_(limit_v * limit_v), tau_s_(window_s) {}
+    // Returns the voltage actually applied for the requested one. Once the running mean
+    // reaches the limit, |U| is clamped to limit_v (the mean then settles exactly there);
+    // the clamp releases below 90 % of the limit, so it never chatters (felt as buzzing).
+    float apply(float requested_v, float dt_s) {
+        if (mean_sq_ >= limit_sq_) clamped_ = true;
+        else if (mean_sq_ < 0.9f * limit_sq_) clamped_ = false;
+        float v = requested_v;
+        if (clamped_) {
+            if (v > limit_v_) v = limit_v_;
+            if (v < -limit_v_) v = -limit_v_;
+        }
+        mean_sq_ += (v * v - mean_sq_) * (dt_s / tau_s_);
+        return v;
+    }
+    float rms() const { return sqrtf(mean_sq_); }
+
+   private:
+    float limit_v_, limit_sq_, tau_s_;
+    bool clamped_ = false;
+    float mean_sq_ = 0.0f;
+};
+
 }  // namespace logic

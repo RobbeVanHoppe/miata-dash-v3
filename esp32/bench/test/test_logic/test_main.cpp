@@ -258,6 +258,33 @@ void test_power_on_request() {
     TEST_ASSERT_TRUE(r.update(10400, false, 0, true));
 }
 
+
+void test_motor_gate_hysteresis_and_fault() {
+    MotorGate g(8.3f, 7.9f, 200);
+    TEST_ASSERT_FALSE(g.update(0, 9.0f, true));
+    TEST_ASSERT_FALSE(g.update(150, 9.0f, true));  // must hold 200 ms
+    TEST_ASSERT_TRUE(g.update(210, 9.0f, true));
+    TEST_ASSERT_TRUE(g.update(300, 8.0f, true));   // inside hysteresis: stays on
+    TEST_ASSERT_FALSE(g.update(310, 7.8f, true));  // below off threshold
+    TEST_ASSERT_FALSE(g.update(320, 9.0f, true));
+    TEST_ASSERT_FALSE(g.update(400, 8.1f, true));  // dip resets the hold timer
+    TEST_ASSERT_FALSE(g.update(500, 9.0f, true));
+    TEST_ASSERT_TRUE(g.update(710, 9.0f, true));
+    TEST_ASSERT_FALSE(g.update(720, 9.0f, false));  // driver fault: off at once
+}
+
+void test_thermal_limiter() {
+    ThermalLimiter t(1.3f, 60.0f);
+    float v = 0;
+    for (int i = 0; i < 500; i++) v = t.apply(3.0f, 0.01f);  // 5 s burst at full voltage
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 3.0f, v);                // short bursts pass untouched
+    for (int i = 0; i < 60000; i++) v = t.apply(3.0f, 0.01f);  // 10 min held against a stop
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 1.3f, t.rms());
+    TEST_ASSERT_TRUE(v < 1.5f);
+    for (int i = 0; i < 30000; i++) t.apply(0.0f, 0.01f);  // 5 min off: cools down
+    TEST_ASSERT_TRUE(t.rms() < 0.15f);  // 5 tau: sqrt(1.69 x e^-5) = 0.107 V
+}
+
 void setup() {
     delay(2000);  // let the serial monitor attach
     UNITY_BEGIN();
@@ -276,6 +303,8 @@ void setup() {
     RUN_TEST(test_haptics_detents_and_endstops);
     RUN_TEST(test_haptics_keeps_position_across_profile_change);
     RUN_TEST(test_power_on_request);
+    RUN_TEST(test_motor_gate_hysteresis_and_fault);
+    RUN_TEST(test_thermal_limiter);
     UNITY_END();
 }
 
